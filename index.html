@@ -6,7 +6,8 @@
 <title>Ventas Diarias</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script>if (typeof Chart === "undefined") document.write('<script src="https:\/\/cdn.jsdelivr.net\/npm\/chart.js@4.5.0\/dist\/chart.umd.min.js"><\/script>');</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <style>
@@ -490,6 +491,10 @@ function renderAcumulado(){
   tb.appendChild(trTot);
 
   // Gráficos
+  if (typeof Chart === "undefined") {
+    showStatus("stAcum","err","Los gráficos no cargaron (falla de internet al abrir la página). Recarga la página con conexión estable.");
+    return;
+  }
   const labels = daily.map(d => d.label);
   drawChart("chartVenta","bar",labels,
     BRANCHES.map(b => ({ label:b.name, data:daily.map(d=>d["v_"+b.id]), backgroundColor:b.color, stack:"v" })),
