@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ventas Diarias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+<style>
+  :root{
+    --ink:#191C1A; --paper:#F4F2EC; --green:#0E6B4C; --amber:#B4690E;
+    --line:#E2E0D8; --muted:#7A807B;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Barlow','Segoe UI',system-ui,sans-serif;
+    max-width:560px; margin-inline:auto; padding:16px 14px 40px;
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+  header{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:14px}
+  .brand{font-weight:800; font-size:22px; letter-spacing:.06em; line-height:1}
+  .brand-sub{font-size:12px; color:#5B615D; margin-top:4px}
+  input[type=date]{font:inherit; font-size:15px; padding:8px 10px; border:2px solid var(--ink); border-radius:8px; background:#fff; color:var(--ink)}
+  .tabs{display:flex; gap:8px; margin-bottom:14px}
+  .tab{flex:1; padding:10px 6px; font:inherit; font-size:13.5px; font-weight:700; border:2px solid var(--ink);
+    border-radius:10px; background:transparent; color:var(--ink); cursor:pointer}
+  .tab.on{background:var(--ink); color:var(--paper)}
+  .card{background:#fff; border:2px solid var(--ink); border-radius:14px; padding:16px;
+    box-shadow:4px 4px 0 rgba(25,28,26,.9); margin-bottom:14px}
+  .sec-title{font-size:12px; font-weight:800; letter-spacing:.1em; color:#3E453F; margin-bottom:12px}
+  .store{border:1.5px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px}
+  .store h3{margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:8px}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px}
+  label.f{display:flex; flex-direction:column; gap:3px}
+  label.f span{font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:#3E453F}
+  label.f input{font-family:'JetBrains Mono',monospace; font-size:17px; padding:9px 10px;
+    border:1.5px solid #B8BCB6; border-radius:8px; background:#FBFAF7; width:100%}
+  .store-venta{margin-top:8px; font-size:13px; color:var(--green); font-weight:700}
+  .day-total{display:flex; flex-direction:column; align-items:center; gap:2px; background:var(--green);
+    color:#F4F9F6; border-radius:10px; padding:12px 16px; margin:6px 0 14px}
+  .day-total .lbl{font-size:11px; letter-spacing:.14em; font-weight:700; opacity:.85}
+  .day-total .val{font-family:'JetBrains Mono',monospace; font-size:30px; font-weight:700}
+  .btn{width:100%; padding:13px 16px; font:inherit; font-size:15px; font-weight:700;
+    background:var(--ink); color:var(--paper); border:none; border-radius:10px; cursor:pointer}
+  .btn.ghost{background:transparent; color:var(--ink); border:1.5px solid var(--ink); font-weight:600}
+  .btn:disabled{opacity:.55}
+  .row{display:flex; gap:10px; flex-wrap:wrap}
+  .row .btn{flex:1; width:auto}
+  .receipt{background:#FBFAF5; border:1.5px dashed #9AA09A; border-radius:10px; padding:14px; overflow-x:auto; margin-bottom:14px}
+  .receipt pre{margin:0; font-family:'JetBrains Mono',monospace; font-size:13.5px; line-height:1.55; white-space:pre}
+  .status{margin-top:12px; padding:10px 12px; border-radius:8px; font-size:13.5px; line-height:1.45; display:none}
+  .status.show{display:block}
+  .status.ok{background:#E3F1E9; color:var(--green); border:1px solid var(--green)}
+  .status.err{background:#F7E5E2; color:#8C2F1F; border:1px solid #8C2F1F}
+  .status.warn{background:#F5EBDA; color:var(--amber); border:1px solid var(--amber)}
+  .stats{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px}
+  .stat{flex:1; min-width:96px; background:var(--paper); border-radius:10px; padding:10px 12px}
+  .stat .l{font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#5B615D}
+  .stat .v{font-family:'JetBrains Mono',monospace; font-size:19px; font-weight:700; margin-top:2px}
+  table{width:100%; border-collapse:collapse; font-size:13.5px}
+  th{text-align:left; padding:6px; border-bottom:2px solid var(--ink); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#3E453F}
+  td{padding:8px 6px; border-bottom:1px solid var(--line)}
+  td.n{text-align:right; font-family:'JetBrains Mono',monospace; font-size:13px}
+  th.n{text-align:right}
+  tr.tot td{font-weight:700}
+  canvas{max-width:100%}
+  .chart-box{position:relative; height:250px; margin-bottom:6px}
+  footer{font-size:11.5px; color:#82887F; text-align:center; line-height:1.5; margin-top:16px}
+  .banner-jefe{background:var(--amber); color:#fff; border-radius:10px; padding:10px 14px;
+    font-weight:700; text-align:center; margin-bottom:14px; font-size:14px; letter-spacing:.03em}
+  .hidden{display:none !important}
+  .muted{color:var(--muted); font-size:14px; padding:8px 0}
+  .restore-link{font-size:12px; color:var(--muted); text-align:center; margin-top:20px}
+  .restore-link button{font:inherit; background:none; border:none; color:var(--muted); text-decoration:underline; cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">VENTAS DIARIAS</div>
+    <div class="brand-sub" id="brandSub">4 sucursales</div>
+  </div>
+  <input type="date" id="fecha" aria-label="Fecha del reporte">
+</header>
+
+<div id="bannerJefe" class="banner-jefe hidden">👁 VISTA DEL JEFE · SOLO LECTURA</div>
+<div id="jefeFecha" class="muted hidden" style="text-align:center; margin-top:-8px; margin-bottom:12px"></div>
+
+<nav class="tabs" id="tabs">
+  <button class="tab" data-tab="reportar" id="tabBtnReportar">Reportar</button>
+  <button class="tab on" data-tab="consolidado">Consolidado</button>
+  <button class="tab" data-tab="acumulado">Acumulado</button>
+</nav>
+
+<!-- ══ REPORTAR ══ -->
+<section id="view-reportar" class="hidden">
+  <div class="card">
+    <div class="sec-title">REPORTE DEL DÍA · LAS 4 TIENDAS</div>
+    <div id="stores"></div>
+    <div class="day-total">
+      <span class="lbl">VENTA TOTAL DEL DÍA</span>
+      <span class="val" id="dayTotal">$0</span>
+    </div>
+    <button class="btn" id="btnGuardar">Guardar día</button>
+    <div class="status" id="stReportar"></div>
+  </div>
+</section>
+
+<!-- ══ CONSOLIDADO ══ -->
+<section id="view-consolidado">
+  <div class="card">
+    <div class="status warn" id="stFaltantes"></div>
+    <div class="receipt"><pre id="reportText">Sin datos para esta fecha.</pre></div>
+    <div class="row" id="consoBtns">
+      <button class="btn" id="btnCopiarReporte">Copiar reporte</button>
+      <button class="btn ghost" id="btnEnlaceJefe">Enlace para el jefe</button>
+    </div>
+    <div class="status" id="stConso"></div>
+  </div>
+</section>
+
+<!-- ══ ACUMULADO ══ -->
+<section id="view-acumulado" class="hidden">
+  <div class="card">
+    <div class="sec-title" id="acumTitle">ACUMULADO GENERAL</div>
+    <div class="stats">
+      <div class="stat"><div class="l">Venta total</div><div class="v" id="statVenta">$0</div></div>
+      <div class="stat"><div class="l">Piezas</div><div class="v" id="statPiezas">0</div></div>
+      <div class="stat"><div class="l">Prom/pza</div><div class="v" id="statProm">$0</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Tienda</th><th class="n">Venta $</th><th class="n">Pzas</th><th class="n">Prom</th><th class="n">% $</th></tr></thead>
+      <tbody id="tablaTiendas"></tbody>
+    </table>
+    <button class="btn" id="btnExcel" style="margin-top:14px">Exportar todo a Excel</button>
+    <div class="status" id="stAcum"></div>
+  </div>
+  <div class="card">
+    <div class="sec-title">VENTA DIARIA POR TIENDA ($)</div>
+    <div class="chart-box"><canvas id="chartVenta"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="sec-title">PIEZAS VENDIDAS POR DÍA</div>
+    <div class="chart-box"><canvas id="chartPiezas"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="sec-title">ACUMULADO CORRIDO ($)</div>
+    <div class="chart-box"><canvas id="chartAcum"></canvas></div>
+  </div>
+</section>
+
+<footer id="footerTxt">Los datos se guardan en este dispositivo. Exporta a Excel cada semana como respaldo.</footer>
+<div class="restore-link hidden" id="restoreBox">
+  <button id="btnRestore">Soy el administrador: importar estos datos a este dispositivo</button>
+</div>
+
+<script>
+"use strict";
+// ── Config ────────────────────────────────────────────────────────
+const BRANCHES = [
+  { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C" },
+  { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E" },
+  { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5" },
+  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A" },
+];
+const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+const LS_KEY = "ventasDiarias.v1";
+const SEED_DATE = "2026-07-17";
+const SEED = {
+  cima:     { usd:100, bs:331.45, cxc:315.55, pz:22, inv:5992 },
+  dorado:   { usd:16,  bs:384.3,  cxc:294.7,  pz:22, inv:6062 },
+  fiorillo: { usd:0,   bs:31.5,   cxc:33.5,   pz:3,  inv:1852 },
+  centro:   { usd:0,   bs:466.8,  cxc:343.2,  pz:27, inv:10351 },
+};
+
+// ── Utilidades ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const todayStr = () => {
+  const d = new Date(), p = (n)=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+};
+const fmt = (n) => {
+  if (n==null || isNaN(n)) return "0";
+  const neg = n<0 ? "-" : "";
+  const abs = Math.abs(Math.round(n*100)/100);
+  let parts = abs.toFixed(2).split(".");
+  let int = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,".");
+  let dec = parts[1].replace(/0+$/,"");
+  return neg + int + (dec ? ","+dec : "");
+};
+const parseNum = (s) => {
+  if (s==="" || s==null) return 0;
+  const v = parseFloat(String(s).trim().replace(",","."));
+  return isNaN(v) ? 0 : v;
+};
+const dateLabel = (iso) => {
+  const p = iso.split("-").map(Number);
+  const dt = new Date(p[0], p[1]-1, p[2]);
+  const pad = (n)=>String(n).padStart(2,"0");
+  return DAYS[dt.getDay()]+" "+pad(p[2])+"/"+pad(p[1]);
+};
+const shortLabel = (iso) => { const p = iso.split("-"); return p[2]+"/"+p[1]; };
+const ventaOf = (r) => r ? (r.usd||0)+(r.bs||0)+(r.cxc||0) : 0;
+const r2 = (n) => Math.round(n*100)/100;
+
+function showStatus(id, type, msg, timeout){
+  const el = $(id);
+  el.className = "status show "+type;
+  el.textContent = msg;
+  if (timeout) setTimeout(()=>{ el.className="status"; }, timeout);
+}
+
+// ── Datos ─────────────────────────────────────────────────────────
+let DATA = { days:{} };          // datos del administrador (localStorage)
+let BOSS = null;                 // datos importados del enlace del jefe
+let esJefe = false;
+
+function loadData(){
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) { DATA = JSON.parse(raw); return; }
+  } catch(e){ console.error(e); }
+  // Primera vez: precargar el 17/07
+  DATA = { days:{} };
+  DATA.days[SEED_DATE] = JSON.parse(JSON.stringify(SEED));
+  saveData();
+}
+function saveData(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(DATA)); return true; }
+  catch(e){ console.error(e); return false; }
+}
+function getDays(){ return esJefe && BOSS ? BOSS.days : DATA.days; }
+function sortedDates(){ return Object.keys(getDays()).sort(); }
+
+// ── Modo jefe (datos en el enlace) ────────────────────────────────
+function tryBossMode(){
+  const h = location.hash;
+  if (!h.startsWith("#d=")) return;
+  try {
+    const json = LZString.decompressFromEncodedURIComponent(h.slice(3));
+    const payload = JSON.parse(json);
+    if (!payload || !payload.days) throw new Error("payload inválido");
+    BOSS = payload;
+    esJefe = true;
+  } catch(e){
+    console.error("Enlace inválido:", e);
+  }
+}
+function buildBossLink(){
+  const dates = Object.keys(DATA.days).sort();
+  const recent = dates.slice(-120);            // últimos 120 días de detalle
+  const days = {};
+  recent.forEach(d => { days[d] = DATA.days[d]; });
+  // Acumulado histórico completo (por si el detalle está recortado)
+  const allTime = { branches:{}, dias: dates.length };
+  BRANCHES.forEach(b => {
+    let v=0, p=0;
+    dates.forEach(d => { const r = DATA.days[d][b.id]; if(r){ v+=ventaOf(r); p+=(r.pz||0); } });
+    allTime.branches[b.id] = { venta:r2(v), pz:p };
+  });
+  const payload = { v:1, gen: todayStr(), days, allTime };
+  const comp = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+  const base = location.href.split("#")[0];
+  return base + "#d=" + comp;
+}
+
+// ── Reportar ──────────────────────────────────────────────────────
+function buildStoreForms(){
+  const box = $("stores");
+  box.innerHTML = "";
+  BRANCHES.forEach(b => {
+    const div = document.createElement("div");
+    div.className = "store";
+    div.innerHTML =
+      '<h3><span class="dot" style="background:'+b.color+'"></span>'+b.name+'</h3>'+
+      '<div class="grid">'+
+        field(b.id,"usd","Efectivo $")+
+        field(b.id,"bs","Bs (en $)")+
+        field(b.id,"cxc","CxC Cashea")+
+        field(b.id,"pz","Piezas","numeric")+
+        field(b.id,"inv","Inventario","numeric")+
+      '</div>'+
+      '<div class="store-venta" id="venta-'+b.id+'">Venta: $0</div>';
+    box.appendChild(div);
+  });
+  box.addEventListener("input", updateTotals);
+}
+function field(bid, key, label, mode){
+  return '<label class="f"><span>'+label+'</span>'+
+    '<input type="text" inputmode="'+(mode||"decimal")+'" placeholder="0" id="in-'+bid+'-'+key+'"></label>';
+}
+function readForm(bid){
+  return {
+    usd: parseNum($("in-"+bid+"-usd").value),
+    bs:  parseNum($("in-"+bid+"-bs").value),
+    cxc: parseNum($("in-"+bid+"-cxc").value),
+    pz:  Math.round(parseNum($("in-"+bid+"-pz").value)),
+    inv: Math.round(parseNum($("in-"+bid+"-inv").value)),
+  };
+}
+function updateTotals(){
+  let tot = 0;
+  BRANCHES.forEach(b => {
+    const r = readForm(b.id);
+    const v = ventaOf(r);
+    tot += v;
+    $("venta-"+b.id).textContent = "Venta: $"+fmt(v)+"  ("+fmt(r.usd)+" + "+fmt(r.bs)+" + "+fmt(r.cxc)+")";
+  });
+  $("dayTotal").textContent = "$"+fmt(tot);
+}
+function fillFormFromDate(){
+  const d = $("fecha").value;
+  const day = DATA.days[d];
+  BRANCHES.forEach(b => {
+    const r = day ? day[b.id] : null;
+    ["usd","bs","cxc","pz","inv"].forEach(k => {
+      const el = $("in-"+b.id+"-"+k);
+      el.value = r && r[k] ? String(r[k]).replace(".",",") : "";
+    });
+  });
+  updateTotals();
+  if (day) showStatus("stReportar","warn","Ya hay datos guardados para "+dateLabel(d)+". Al guardar los reemplazas.");
+  else $("stReportar").className = "status";
+}
+function guardarDia(){
+  const d = $("fecha").value;
+  if (!d) { showStatus("stReportar","err","Elige la fecha arriba."); return; }
+  const day = {};
+  let algo = false;
+  BRANCHES.forEach(b => {
+    const r = readForm(b.id);
+    day[b.id] = r;
+    if (ventaOf(r) > 0 || r.pz > 0 || r.inv > 0) algo = true;
+  });
+  if (!algo) { showStatus("stReportar","err","Todos los campos están en cero. Carga al menos una tienda."); return; }
+  DATA.days[d] = day;
+  if (saveData()) {
+    showStatus("stReportar","ok","Guardado: "+dateLabel(d)+" · Venta total $"+fmt(BRANCHES.reduce((s,b)=>s+ventaOf(day[b.id]),0)), 5000);
+    renderConsolidado();
+    renderAcumulado();
+  } else {
+    showStatus("stReportar","err","No se pudo guardar en este dispositivo.");
+  }
+}
+
+// ── Consolidado ───────────────────────────────────────────────────
+function buildReportText(d){
+  const day = getDays()[d];
+  const lines = [];
+  lines.push("Tiend: $ + Bs + CxC.Cash = Venta");
+  lines.push("");
+  let tUsd=0,tBs=0,tCxc=0,tPz=0,tInv=0;
+  BRANCHES.forEach(b => {
+    const r = day ? day[b.id] : null;
+    if (!r || (ventaOf(r)===0 && !r.pz && !r.inv)) { lines.push("💰"+b.short+": sin reporte"); return; }
+    tUsd+=r.usd||0; tBs+=r.bs||0; tCxc+=r.cxc||0; tPz+=r.pz||0; tInv+=r.inv||0;
+    lines.push("💰"+b.short+": "+fmt(r.usd||0)+" + "+fmt(r.bs||0)+" + "+fmt(r.cxc||0)+" = "+fmt(ventaOf(r)));
+  });
+  const tVta = tUsd+tBs+tCxc;
+  lines.push("");
+  lines.push("Total 💲: "+fmt(tUsd));
+  lines.push("Total Bs💳.: "+fmt(tBs));
+  lines.push("");
+  lines.push("✅Total Disponible: $"+fmt(tUsd+tBs));
+  lines.push("");
+  lines.push("+ ⛔CxC Cashea: $"+fmt(tCxc));
+  lines.push("");
+  lines.push("📊 *"+dateLabel(d)+": $"+fmt(tVta)+"*");
+  lines.push("🏷️*Piezas: "+fmt(tPz)+"*");
+  lines.push("📈Prom: $"+fmt(tPz>0 ? tVta/tPz : 0));
+  lines.push("");
+  BRANCHES.forEach(b => {
+    const r = day ? day[b.id] : null;
+    lines.push(b.name+": "+(r ? fmt(r.pz||0) : "—"));
+  });
+  lines.push("");
+  lines.push("*Inventario:*");
+  BRANCHES.forEach(b => {
+    const r = day ? day[b.id] : null;
+    lines.push(b.name+": "+(r ? fmt(r.inv||0) : "—")+" pzas");
+  });
+  lines.push("👟*Total Inventario: "+fmt(tInv)+"*");
+  return lines.join("\n");
+}
+function renderConsolidado(){
+  const d = $("fecha").value;
+  const day = getDays()[d];
+  if (!day) {
+    $("reportText").textContent = "Sin datos para "+dateLabel(d)+".";
+    $("stFaltantes").className = "status";
+    return;
+  }
+  const faltan = BRANCHES.filter(b => {
+    const r = day[b.id];
+    return !r || (ventaOf(r)===0 && !r.pz && !r.inv);
+  });
+  if (faltan.length > 0 && faltan.length < 4) {
+    $("stFaltantes").className = "status show warn";
+    $("stFaltantes").textContent = "Sin datos: "+faltan.map(b=>b.name).join(", ")+". El consolidado está incompleto.";
+  } else {
+    $("stFaltantes").className = "status";
+  }
+  $("reportText").textContent = buildReportText(d);
+}
+function copiar(texto, statusId, okMsg){
+  const done = () => showStatus(statusId,"ok",okMsg,3500);
+  const fail = () => showStatus(statusId,"err","No se pudo copiar. Mantén presionado el texto y cópialo manual.");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(texto).then(done).catch(()=>{ fallbackCopy(texto) ? done() : fail(); });
+  } else {
+    fallbackCopy(texto) ? done() : fail();
+  }
+}
+function fallbackCopy(texto){
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = texto; document.body.appendChild(ta);
+    ta.select(); const ok = document.execCommand("copy");
+    document.body.removeChild(ta); return ok;
+  } catch(e){ return false; }
+}
+
+// ── Acumulado ─────────────────────────────────────────────────────
+let charts = {};
+function renderAcumulado(){
+  const days = getDays();
+  const dates = sortedDates();
+  if (dates.length === 0) return;
+
+  // Serie diaria
+  const daily = dates.map(d => {
+    const row = { date:d, label:shortLabel(d), tv:0, tp:0 };
+    BRANCHES.forEach(b => {
+      const r = days[d][b.id];
+      row["v_"+b.id] = r ? r2(ventaOf(r)) : 0;
+      row["p_"+b.id] = r ? (r.pz||0) : 0;
+      row.tv += row["v_"+b.id];
+      row.tp += row["p_"+b.id];
+    });
+    return row;
+  });
+
+  // Totales por tienda (jefe: usar allTime si viene en el enlace)
+  let byBranch, totDias;
+  if (esJefe && BOSS && BOSS.allTime) {
+    byBranch = BRANCHES.map(b => {
+      const a = BOSS.allTime.branches[b.id] || {venta:0,pz:0};
+      return Object.assign({}, b, { venta:a.venta, pz:a.pz });
+    });
+    totDias = BOSS.allTime.dias;
+  } else {
+    byBranch = BRANCHES.map(b => {
+      let v=0,p=0;
+      dates.forEach(d => { const r=days[d][b.id]; if(r){ v+=ventaOf(r); p+=(r.pz||0);} });
+      return Object.assign({}, b, { venta:r2(v), pz:p });
+    });
+    totDias = dates.length;
+  }
+  const totV = r2(byBranch.reduce((s,b)=>s+b.venta,0));
+  const totP = byBranch.reduce((s,b)=>s+b.pz,0);
+  const prom = totP>0 ? totV/totP : 0;
+
+  $("acumTitle").textContent = "ACUMULADO GENERAL · "+totDias+" día"+(totDias!==1?"s":"");
+  $("statVenta").textContent = "$"+fmt(totV);
+  $("statPiezas").textContent = fmt(totP);
+  $("statProm").textContent = "$"+fmt(prom);
+
+  const tb = $("tablaTiendas");
+  tb.innerHTML = "";
+  byBranch.forEach(b => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><span class="dot" style="background:'+b.color+'; margin-right:7px"></span>'+b.name+'</td>'+
+      '<td class="n">'+fmt(b.venta)+'</td>'+
+      '<td class="n">'+fmt(b.pz)+'</td>'+
+      '<td class="n">'+(b.pz>0 ? fmt(b.venta/b.pz) : "—")+'</td>'+
+      '<td class="n">'+(totV>0 ? fmt(b.venta/totV*100)+"%" : "—")+'</td>';
+    tb.appendChild(tr);
+  });
+  const trTot = document.createElement("tr");
+  trTot.className = "tot";
+  trTot.innerHTML = '<td>Total</td><td class="n">'+fmt(totV)+'</td><td class="n">'+fmt(totP)+
+    '</td><td class="n">'+fmt(prom)+'</td><td class="n">100%</td>';
+  tb.appendChild(trTot);
+
+  // Gráficos
+  const labels = daily.map(d => d.label);
+  drawChart("chartVenta","bar",labels,
+    BRANCHES.map(b => ({ label:b.name, data:daily.map(d=>d["v_"+b.id]), backgroundColor:b.color, stack:"v" })),
+    (v)=>"$"+fmt(v));
+  drawChart("chartPiezas","bar",labels,
+    BRANCHES.map(b => ({ label:b.name, data:daily.map(d=>d["p_"+b.id]), backgroundColor:b.color, stack:"p" })),
+    (v)=>fmt(v)+" pzas");
+  let acc=0;
+  const cum = daily.map(d => { acc+=d.tv; return r2(acc); });
+  drawChart("chartAcum","line",labels,
+    [{ label:"Venta acumulada", data:cum, borderColor:"#0E6B4C", backgroundColor:"#0E6B4C",
+       borderWidth:3, pointRadius:4, tension:.25, fill:false }],
+    (v)=>"$"+fmt(v));
+}
+function drawChart(id, type, labels, datasets, fmtTip){
+  if (charts[id]) charts[id].destroy();
+  const stacked = type === "bar";
+  charts[id] = new Chart($(id), {
+    type: type,
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ display: datasets.length>1, labels:{ font:{ size:11, family:"Barlow" } } },
+        tooltip:{ callbacks:{ label:(ctx)=> ctx.dataset.label+": "+fmtTip(ctx.parsed.y) } }
+      },
+      scales:{
+        x:{ stacked: stacked, ticks:{ font:{ size:11 } }, grid:{ color:"#EDEBE3" } },
+        y:{ stacked: stacked, ticks:{ font:{ size:10 } }, grid:{ color:"#EDEBE3" } }
+      }
+    }
+  });
+}
+
+// ── Excel ─────────────────────────────────────────────────────────
+function exportExcel(){
+  try {
+    const days = getDays();
+    const dates = sortedDates();
+    const wb = XLSX.utils.book_new();
+
+    const detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","Inventario"]];
+    dates.forEach(d => BRANCHES.forEach(b => {
+      const r = days[d][b.id]; if (!r) return;
+      detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(ventaOf(r)), r.pz||0, r.inv||0]);
+    }));
+    const ws1 = XLSX.utils.aoa_to_sheet(detalle);
+    ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:11}];
+    XLSX.utils.book_append_sheet(wb, ws1, "Detalle");
+
+    const conso = [["Fecha","Total $","Total Bs (en $)","Disponible","CxC Cashea","Venta total","Piezas","Prom x pza","Inventario total"]];
+    let aU=0,aB=0,aC=0,aP=0;
+    dates.forEach(d => {
+      let u=0,bs=0,c=0,p=0,inv=0;
+      BRANCHES.forEach(b => { const r=days[d][b.id]; if(r){ u+=r.usd||0; bs+=r.bs||0; c+=r.cxc||0; p+=r.pz||0; inv+=r.inv||0; } });
+      aU+=u; aB+=bs; aC+=c; aP+=p;
+      const v=u+bs+c;
+      conso.push([d, r2(u), r2(bs), r2(u+bs), r2(c), r2(v), p, p>0?r2(v/p):0, inv]);
+    });
+    const aV=aU+aB+aC;
+    conso.push(["ACUMULADO", r2(aU), r2(aB), r2(aU+aB), r2(aC), r2(aV), aP, aP>0?r2(aV/aP):0, ""]);
+    const ws2 = XLSX.utils.aoa_to_sheet(conso);
+    ws2["!cols"] = [{wch:11},{wch:9},{wch:14},{wch:11},{wch:11},{wch:11},{wch:8},{wch:10},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, ws2, "Consolidado diario");
+
+    const acum = [["Tienda","Venta $","Piezas","Prom x pza","% del total $","Días"]];
+    let tV=0,tP=0;
+    const rowsB = BRANCHES.map(b => {
+      let v=0,p=0,dias=0;
+      dates.forEach(d => { const r=days[d][b.id]; if(r && (ventaOf(r)>0||r.pz||r.inv)){ v+=ventaOf(r); p+=r.pz||0; dias++; } });
+      tV+=v; tP+=p;
+      return [b.name, r2(v), p, p>0?r2(v/p):0, 0, dias];
+    });
+    rowsB.forEach(r => { r[4] = tV>0 ? r2(r[1]/tV*100) : 0; acum.push(r); });
+    acum.push(["TOTAL", r2(tV), tP, tP>0?r2(tV/tP):0, 100, dates.length]);
+    const ws3 = XLSX.utils.aoa_to_sheet(acum);
+    ws3["!cols"] = [{wch:10},{wch:10},{wch:8},{wch:10},{wch:12},{wch:7}];
+    XLSX.utils.book_append_sheet(wb, ws3, "Acumulado x tienda");
+
+    XLSX.writeFile(wb, "ventas_"+todayStr()+".xlsx");
+  } catch(e){
+    console.error(e);
+    showStatus("stAcum","err","No se pudo generar el Excel. Intenta de nuevo.");
+  }
+}
+
+// ── Navegación ────────────────────────────────────────────────────
+function switchTab(name){
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab===name));
+  ["reportar","consolidado","acumulado"].forEach(v => {
+    $("view-"+v).classList.toggle("hidden", v!==name);
+  });
+  if (name==="consolidado") renderConsolidado();
+  if (name==="acumulado") renderAcumulado();
+}
+
+// ── Inicio ────────────────────────────────────────────────────────
+function init(){
+  tryBossMode();
+  $("fecha").value = todayStr();
+
+  if (esJefe) {
+    // Vista del jefe: solo lectura
+    $("bannerJefe").classList.remove("hidden");
+    $("jefeFecha").classList.remove("hidden");
+    $("jefeFecha").textContent = "Datos al "+dateLabel(BOSS.gen);
+    $("tabBtnReportar").classList.add("hidden");
+    $("consoBtns").classList.add("hidden");
+    $("footerTxt").textContent = "Vista de solo lectura. Los datos se actualizan cuando el administrador envía un enlace nuevo.";
+    // Restaurar (por si el admin abre su propio enlace en un teléfono nuevo)
+    $("restoreBox").classList.remove("hidden");
+    $("btnRestore").addEventListener("click", () => {
+      if (confirm("Esto reemplaza los datos guardados en este dispositivo con los del enlace. ¿Continuar?")) {
+        DATA = { days: BOSS.days };
+        if (saveData()) { location.hash = ""; location.reload(); }
+      }
+    });
+    // Fecha por defecto: último día con datos
+    const dates = Object.keys(BOSS.days).sort();
+    if (dates.length) $("fecha").value = dates[dates.length-1];
+    $("brandSub").textContent = "4 sucursales · consolidado";
+  } else {
+    loadData();
+    buildStoreForms();
+    fillFormFromDate();
+    $("btnGuardar").addEventListener("click", guardarDia);
+    $("btnEnlaceJefe").addEventListener("click", () => {
+      copiar(buildBossLink(), "stConso", "Enlace copiado. Pégalo en el WhatsApp del jefe. Verá los datos de hoy hacia atrás, solo lectura.");
+    });
+  }
+
+  $("fecha").addEventListener("change", () => {
+    if (!esJefe) fillFormFromDate();
+    renderConsolidado();
+  });
+  document.querySelectorAll(".tab").forEach(t =>
+    t.addEventListener("click", () => switchTab(t.dataset.tab)));
+  $("btnCopiarReporte").addEventListener("click", () =>
+    copiar($("reportText").textContent, "stConso", "Reporte copiado. Pégalo en WhatsApp."));
+  $("btnExcel").addEventListener("click", exportExcel);
+
+  renderConsolidado();
+  renderAcumulado();
+  switchTab(esJefe ? "consolidado" : "reportar");
+  // En modo jefe, si la fecha de hoy no tiene datos, ya se ajustó arriba;
+  // en modo admin, mostrar el último día guardado en consolidado si hoy está vacío
+  if (!esJefe && !DATA.days[$("fecha").value]) {
+    const dates = sortedDates();
+    if (dates.length) { /* mantener hoy para reportar; consolidado mostrará "sin datos" hasta guardar */ }
+  }
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
