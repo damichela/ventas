@@ -77,6 +77,16 @@
   .banner-info .btn{margin-top:10px}
   .hidden{display:none !important}
   .muted{color:var(--muted); font-size:14px; padding:8px 0}
+  /* Metas */
+  .meta-row{margin-bottom:14px}
+  .meta-head{display:flex; justify-content:space-between; align-items:baseline; font-size:13.5px; margin-bottom:4px}
+  .meta-head .nom{font-weight:700}
+  .meta-head .cifra{font-family:'JetBrains Mono',monospace; font-size:12.5px}
+  .barra{height:14px; background:var(--paper); border:1.5px solid var(--line); border-radius:999px; overflow:hidden}
+  .barra .fill{height:100%; border-radius:999px; transition:width .4s}
+  .meta-sub{font-size:12px; color:var(--muted); margin-top:3px}
+  .meta-sub b{color:var(--ink)}
+  .meta-edit{margin-top:12px; border-top:1.5px dashed var(--line); padding-top:12px}
 </style>
 </head>
 <body>
@@ -92,8 +102,7 @@
 <div id="bannerJefe" class="banner-jefe hidden">👁 VISTA DEL JEFE · SOLO LECTURA</div>
 <div id="bannerSetup" class="banner-info hidden">
   ⚙️ <b>Falta un paso:</b> esta app aún no está conectada a Google Sheets.
-  Hay que pegar la dirección del script en el archivo index.html
-  (la línea que dice PEGA AQUÍ). Mientras tanto, los datos se guardan solo en este teléfono.
+  Mientras tanto, los datos se guardan solo en este teléfono.
 </div>
 <div id="bannerMigra" class="banner-info hidden">
   ☁️ La nube está vacía, pero este teléfono tiene <b><span id="migraDias">0</span> día(s)</b> guardados.
@@ -143,6 +152,21 @@
 <!-- ACUMULADO -->
 <section id="view-acumulado" class="hidden">
   <div class="card">
+    <div class="sec-title" id="metaTitle">META DEL MES</div>
+    <div id="metaBody"><div class="muted">Cargando…</div></div>
+    <button class="btn ghost hidden" id="btnEditMetas" style="margin-top:6px">Editar metas del mes</button>
+    <div class="meta-edit hidden" id="metaEditBox">
+      <div class="grid">
+        <label class="f"><span>Cima</span><input type="text" inputmode="numeric" id="meta-cima"></label>
+        <label class="f"><span>Dorado</span><input type="text" inputmode="numeric" id="meta-dorado"></label>
+        <label class="f"><span>Fiorillo</span><input type="text" inputmode="numeric" id="meta-fiorillo"></label>
+        <label class="f"><span>Centro</span><input type="text" inputmode="numeric" id="meta-centro"></label>
+      </div>
+      <button class="btn" id="btnGuardarMetas" style="margin-top:12px">Guardar metas</button>
+    </div>
+    <div class="status" id="stMetas"></div>
+  </div>
+  <div class="card">
     <div class="sec-title" id="acumTitle">ACUMULADO GENERAL</div>
     <div class="stats">
       <div class="stat"><div class="l">Venta total</div><div class="v" id="statVenta">$0</div></div>
@@ -174,27 +198,18 @@
 
 <script>
 "use strict";
-// ═══════════════════════════════════════════════════════════════════
-// ▼▼▼ PEGA AQUÍ la dirección de tu script de Google (entre comillas)
 var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxrqw7fQ6HjTLPyJ6IT9OI9tPLPTDyryMCeQQQG0ILA-ajKJZzNMMt87tsaD3rPXLT91w/exec";
-// ▲▲▲ Debe empezar con https://script.google.com/macros/...
-// ═══════════════════════════════════════════════════════════════════
 
 var BRANCHES = [
-  { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C", ab:true  },
-  { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E", ab:true  },
-  { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5", ab:true  },
-  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A", ab:false }
+  { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C" },
+  { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E" },
+  { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5" },
+  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A" }
 ];
 var DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+var MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 var LS_KEY = "ventasDiarias.v1";
-var SEED_DATE = "2026-07-17";
-var SEED = {
-  cima:     { usd:100, bs:331.45, cxc:315.55, pz:22, inv:5992 },
-  dorado:   { usd:16,  bs:384.3,  cxc:294.7,  pz:22, inv:6062 },
-  fiorillo: { usd:0,   bs:31.5,   cxc:33.5,   pz:3,  inv:1852 },
-  centro:   { usd:0,   bs:466.8,  cxc:343.2,  pz:27, inv:10351 }
-};
+var METAS_SUGERIDAS = { "2026-08": { cima:19000, dorado:15000, fiorillo:4000, centro:19000 } };
 
 // ── Utilidades ────────────────────────────────────────────────────
 function $(id){ return document.getElementById(id); }
@@ -214,6 +229,12 @@ function fmt(n){
 }
 function parseNum(s){
   if (s==="" || s==null) return 0;
+  var v = parseFloat(String(s).trim().replace(/\./g,"").replace(",","."));
+  if (isNaN(v)) { v = parseFloat(String(s).trim().replace(",",".")); }
+  return isNaN(v) ? 0 : v;
+}
+function parseNumSimple(s){
+  if (s==="" || s==null) return 0;
   var v = parseFloat(String(s).trim().replace(",","."));
   return isNaN(v) ? 0 : v;
 }
@@ -224,6 +245,15 @@ function dateLabel(iso){
   return DAYS[dt.getDay()]+" "+pad(p[2])+"/"+pad(p[1]);
 }
 function shortLabel(iso){ var p = iso.split("-"); return p[2]+"/"+p[1]; }
+function monthOf(iso){ return iso.slice(0,7); }
+function monthLabel(mes){
+  var p = mes.split("-");
+  return MESES[Number(p[1])-1]+" "+p[0];
+}
+function daysInMonth(mes){
+  var p = mes.split("-").map(Number);
+  return new Date(p[0], p[1], 0).getDate();
+}
 function ventaOf(r){ return r ? (r.usd||0)+(r.bs||0)+(r.cxc||0) : 0; }
 function r2(n){ return Math.round(n*100)/100; }
 function showStatus(id, type, msg, timeout){
@@ -234,14 +264,19 @@ function showStatus(id, type, msg, timeout){
 }
 
 // ── Datos ─────────────────────────────────────────────────────────
-var DATA = { days:{} };
+var DATA = { days:{}, metas:{} };
 var esJefe = location.hash.indexOf("jefe") !== -1;
 var cloudOn = SCRIPT_URL.indexOf("https://") === 0;
 
 function loadLocal(){
   try {
     var raw = localStorage.getItem(LS_KEY);
-    if (raw) { DATA = JSON.parse(raw); return true; }
+    if (raw) {
+      var d = JSON.parse(raw);
+      DATA.days = d.days || {};
+      DATA.metas = d.metas || {};
+      return true;
+    }
   } catch(e){}
   return false;
 }
@@ -253,7 +288,7 @@ function sortedDates(){ return Object.keys(DATA.days).sort(); }
 function cloudGet(){
   return fetch(SCRIPT_URL).then(function(r){ return r.json(); }).then(function(j){
     if (!j || !j.ok) throw new Error("respuesta inválida");
-    return j.days || {};
+    return j;
   });
 }
 function cloudPost(payload){
@@ -276,7 +311,6 @@ function buildStoreForms(){
         field(b.id,"bs","Bs (en $)")+
         field(b.id,"cxc","CxC Cashea")+
         field(b.id,"pz","Piezas","numeric")+
-        (b.ab ? field(b.id,"txn","N° Ventas","numeric") : "")+
         field(b.id,"inv","Inventario","numeric")+
       '</div>'+
       '<div class="store-venta" id="venta-'+b.id+'">Venta: $0</div>';
@@ -289,16 +323,13 @@ function field(bid, key, label, mode){
     '<input type="text" inputmode="'+(mode||"decimal")+'" placeholder="0" id="in-'+bid+'-'+key+'"></label>';
 }
 function readForm(bid){
-  var r = {
-    usd: parseNum($("in-"+bid+"-usd").value),
-    bs:  parseNum($("in-"+bid+"-bs").value),
-    cxc: parseNum($("in-"+bid+"-cxc").value),
-    pz:  Math.round(parseNum($("in-"+bid+"-pz").value)),
-    inv: Math.round(parseNum($("in-"+bid+"-inv").value))
+  return {
+    usd: parseNumSimple($("in-"+bid+"-usd").value),
+    bs:  parseNumSimple($("in-"+bid+"-bs").value),
+    cxc: parseNumSimple($("in-"+bid+"-cxc").value),
+    pz:  Math.round(parseNumSimple($("in-"+bid+"-pz").value)),
+    inv: Math.round(parseNumSimple($("in-"+bid+"-inv").value))
   };
-  var txnEl = $("in-"+bid+"-txn");
-  if (txnEl) r.txn = Math.round(parseNum(txnEl.value));
-  return r;
 }
 function updateTotals(){
   var tot = 0;
@@ -315,9 +346,8 @@ function fillFormFromDate(){
   var day = DATA.days[d];
   BRANCHES.forEach(function(b){
     var r = day ? day[b.id] : null;
-    ["usd","bs","cxc","pz","txn","inv"].forEach(function(k){
+    ["usd","bs","cxc","pz","inv"].forEach(function(k){
       var el = $("in-"+b.id+"-"+k);
-      if (!el) return;
       el.value = r && r[k] ? String(r[k]).replace(".",",") : "";
     });
   });
@@ -385,6 +415,21 @@ function buildReportText(d){
   lines.push("📊 *"+dateLabel(d)+": $"+fmt(tVta)+"*");
   lines.push("🏷️*Piezas: "+fmt(tPz)+"*");
   lines.push("📈Prom: $"+fmt(tPz>0 ? tVta/tPz : 0));
+  // Avance de meta del mes en el reporte
+  var mes = monthOf(d);
+  var m = DATA.metas[mes];
+  if (m) {
+    var metaTot = 0, vendidoMes = 0;
+    BRANCHES.forEach(function(b){ metaTot += m[b.id]||0; });
+    Object.keys(DATA.days).forEach(function(f){
+      if (monthOf(f)===mes && f<=d) {
+        BRANCHES.forEach(function(b){ vendidoMes += ventaOf(DATA.days[f][b.id]); });
+      }
+    });
+    if (metaTot > 0) {
+      lines.push("🎯Meta mes: "+fmt(vendidoMes)+" / "+fmt(metaTot)+" ("+fmt(vendidoMes/metaTot*100)+"%)");
+    }
+  }
   lines.push("");
   BRANCHES.forEach(function(b){
     var r = day ? day[b.id] : null;
@@ -437,9 +482,122 @@ function fallbackCopy(texto){
   } catch(e){ return false; }
 }
 
+// ── Metas del mes ─────────────────────────────────────────────────
+function metasDelMes(mes){
+  if (DATA.metas[mes]) return { m: DATA.metas[mes], guardada: true };
+  if (METAS_SUGERIDAS[mes]) return { m: METAS_SUGERIDAS[mes], guardada: false };
+  return { m: null, guardada: false };
+}
+function vendidoMesPorTienda(mes){
+  var out = {};
+  BRANCHES.forEach(function(b){ out[b.id] = 0; });
+  Object.keys(DATA.days).forEach(function(f){
+    if (monthOf(f) !== mes) return;
+    BRANCHES.forEach(function(b){
+      out[b.id] += ventaOf(DATA.days[f][b.id]);
+    });
+  });
+  return out;
+}
+function renderMetas(){
+  var mes = monthOf($("fecha").value || todayStr());
+  var info = metasDelMes(mes);
+  $("metaTitle").textContent = "META DE "+monthLabel(mes);
+  var body = $("metaBody");
+
+  if (!info.m) {
+    body.innerHTML = '<div class="muted">No hay meta definida para este mes.'+
+      (esJefe ? '' : ' Toca "Editar metas del mes" para fijarla.')+'</div>';
+  } else {
+    var vend = vendidoMesPorTienda(mes);
+    var hoy = todayStr();
+    var esMesActual = monthOf(hoy) === mes;
+    var diasMes = daysInMonth(mes);
+    var diaHoy = Number(hoy.split("-")[2]);
+    var diasRest = esMesActual ? (diasMes - diaHoy + 1) : 0;
+
+    var html = "";
+    var metaTot = 0, vendTot = 0;
+    BRANCHES.forEach(function(b){
+      var meta = info.m[b.id] || 0;
+      var v = r2(vend[b.id]);
+      metaTot += meta; vendTot += v;
+      var pct = meta > 0 ? v/meta*100 : 0;
+      var falta = Math.max(0, meta - v);
+      var sub;
+      if (meta === 0) sub = "sin meta";
+      else if (pct >= 100) sub = "✅ Meta cumplida";
+      else if (esMesActual && diasRest > 0) sub = "faltan $<b>"+fmt(falta)+"</b> · necesita $<b>"+fmt(falta/diasRest)+"</b>/día ("+diasRest+" días)";
+      else sub = "faltaron $<b>"+fmt(falta)+"</b>";
+      html +=
+        '<div class="meta-row">'+
+          '<div class="meta-head">'+
+            '<span class="nom"><span class="dot" style="background:'+b.color+'; margin-right:6px"></span>'+b.name+'</span>'+
+            '<span class="cifra">'+fmt(v)+' / '+fmt(meta)+' · <b>'+fmt(pct)+'%</b></span>'+
+          '</div>'+
+          '<div class="barra"><div class="fill" style="width:'+Math.min(100,pct)+'%; background:'+b.color+'"></div></div>'+
+          '<div class="meta-sub">'+sub+'</div>'+
+        '</div>';
+    });
+    var pctTot = metaTot>0 ? vendTot/metaTot*100 : 0;
+    var faltaTot = Math.max(0, metaTot - vendTot);
+    var subT;
+    if (pctTot >= 100) subT = "✅ Meta general cumplida";
+    else if (esMesActual && diasRest > 0) subT = "faltan $<b>"+fmt(faltaTot)+"</b> · necesita $<b>"+fmt(faltaTot/diasRest)+"</b>/día ("+diasRest+" días)";
+    else subT = "faltaron $<b>"+fmt(faltaTot)+"</b>";
+    html +=
+      '<div class="meta-row" style="border-top:2px solid var(--ink); padding-top:12px">'+
+        '<div class="meta-head">'+
+          '<span class="nom">TOTAL</span>'+
+          '<span class="cifra">'+fmt(r2(vendTot))+' / '+fmt(metaTot)+' · <b>'+fmt(pctTot)+'%</b></span>'+
+        '</div>'+
+        '<div class="barra"><div class="fill" style="width:'+Math.min(100,pctTot)+'%; background:var(--green)"></div></div>'+
+        '<div class="meta-sub">'+subT+'</div>'+
+      '</div>';
+    if (!info.guardada && !esJefe) {
+      html += '<div class="status show warn" style="margin-top:4px">Esta meta está sugerida pero aún no guardada en la nube. Toca "Editar metas del mes" y luego "Guardar metas".</div>';
+    }
+    body.innerHTML = html;
+  }
+
+  if (!esJefe) {
+    $("btnEditMetas").classList.remove("hidden");
+    var pre = info.m || { cima:"", dorado:"", fiorillo:"", centro:"" };
+    BRANCHES.forEach(function(b){
+      $("meta-"+b.id).value = pre[b.id] ? String(pre[b.id]) : "";
+    });
+  }
+}
+function guardarMetas(){
+  var mes = monthOf($("fecha").value || todayStr());
+  var m = {};
+  BRANCHES.forEach(function(b){ m[b.id] = parseNum($("meta-"+b.id).value); });
+  var tot = BRANCHES.reduce(function(s,b){ return s+m[b.id]; },0);
+  if (tot <= 0) { showStatus("stMetas","err","Las metas están en cero. Escribe los montos del mes."); return; }
+  DATA.metas[mes] = m;
+  saveLocal();
+  renderMetas();
+  if (!cloudOn) { showStatus("stMetas","warn","Meta guardada solo en este teléfono."); return; }
+  var btn = $("btnGuardarMetas");
+  btn.disabled = true; btn.textContent = "Guardando…";
+  cloudPost({ action:"saveMeta", mes:mes, metas:m })
+    .then(function(){
+      showStatus("stMetas","ok","☁️ Metas de "+monthLabel(mes)+" guardadas en la nube.", 6000);
+      $("metaEditBox").classList.add("hidden");
+      renderMetas();
+    })
+    .catch(function(){
+      showStatus("stMetas","err","No se pudo guardar en la nube. Si acabas de actualizar el script, verifica que implementaste la versión nueva.");
+    })
+    .finally(function(){
+      btn.disabled = false; btn.textContent = "Guardar metas";
+    });
+}
+
 // ── Acumulado ─────────────────────────────────────────────────────
 var charts = {};
 function renderAcumulado(){
+  renderMetas();
   var dates = sortedDates();
   if (dates.length === 0) return;
 
@@ -531,16 +689,13 @@ function exportExcel(){
     var dates = sortedDates();
     var wb = XLSX.utils.book_new();
 
-    var detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","N° Ventas","Ticket $","Inventario"]];
+    var detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","Inventario"]];
     dates.forEach(function(d){ BRANCHES.forEach(function(b){
       var r = DATA.days[d][b.id]; if (!r) return;
-      var v = ventaOf(r);
-      var txn = (r.txn!=null && r.txn>0) ? r.txn : "";
-      var ticket = (txn!=="") ? r2(v/txn) : "";
-      detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(v), r.pz||0, txn, ticket, r.inv||0]);
+      detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(ventaOf(r)), r.pz||0, r.inv||0]);
     });});
     var ws1 = XLSX.utils.aoa_to_sheet(detalle);
-    ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:9},{wch:9},{wch:11}];
+    ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:11}];
     XLSX.utils.book_append_sheet(wb, ws1, "Detalle");
 
     var conso = [["Fecha","Total $","Total Bs (en $)","Disponible","CxC Cashea","Venta total","Piezas","Prom x pza","Inventario total"]];
@@ -571,6 +726,22 @@ function exportExcel(){
     var ws3 = XLSX.utils.aoa_to_sheet(acum);
     ws3["!cols"] = [{wch:10},{wch:10},{wch:8},{wch:10},{wch:12},{wch:7}];
     XLSX.utils.book_append_sheet(wb, ws3, "Acumulado x tienda");
+
+    // Hoja de metas
+    var mesesM = Object.keys(DATA.metas).sort();
+    if (mesesM.length) {
+      var hm = [["Mes","Cima","Dorado","Fiorillo","Centro","Total meta","Vendido","% cumplido"]];
+      mesesM.forEach(function(mes){
+        var m = DATA.metas[mes];
+        var mt = (m.cima||0)+(m.dorado||0)+(m.fiorillo||0)+(m.centro||0);
+        var vend = vendidoMesPorTienda(mes);
+        var vt = r2(vend.cima+vend.dorado+vend.fiorillo+vend.centro);
+        hm.push([mes, m.cima||0, m.dorado||0, m.fiorillo||0, m.centro||0, mt, vt, mt>0?r2(vt/mt*100):0]);
+      });
+      var ws4 = XLSX.utils.aoa_to_sheet(hm);
+      ws4["!cols"] = [{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:10},{wch:10},{wch:11}];
+      XLSX.utils.book_append_sheet(wb, ws4, "Metas");
+    }
 
     XLSX.writeFile(wb, "ventas_"+todayStr()+".xlsx");
   } catch(e){
@@ -608,6 +779,10 @@ function init(){
       var link = location.href.split("#")[0] + "#jefe";
       copiar(link, "stConso", "Enlace copiado. Es fijo: el jefe lo abre cuando quiera y toca Actualizar datos para ver lo último.");
     });
+    $("btnEditMetas").addEventListener("click", function(){
+      $("metaEditBox").classList.toggle("hidden");
+    });
+    $("btnGuardarMetas").addEventListener("click", guardarMetas);
   }
 
   $("fecha").addEventListener("change", function(){
@@ -623,13 +798,7 @@ function init(){
   $("btnExcel").addEventListener("click", exportExcel);
   $("btnMigrar").addEventListener("click", migrar);
 
-  // Carga de datos
-  var tieneLocal = loadLocal();
-  if (!tieneLocal && !cloudOn) {
-    DATA = { days:{} };
-    DATA.days[SEED_DATE] = JSON.parse(JSON.stringify(SEED));
-    saveLocal();
-  }
+  loadLocal();
 
   if (!cloudOn) {
     if (!esJefe) $("bannerSetup").classList.remove("hidden");
@@ -639,16 +808,19 @@ function init(){
 
   $("reportText").textContent = "Cargando datos de la nube…";
   cloudGet()
-    .then(function(cloudDays){
+    .then(function(j){
+      var cloudDays = j.days || {};
+      var cloudMetas = j.metas || {};
       var nCloud = Object.keys(cloudDays).length;
       var nLocal = Object.keys(DATA.days).length;
       if (nCloud > 0) {
         DATA.days = cloudDays;
-        saveLocal();
       } else if (nLocal > 0 && !esJefe) {
         $("migraDias").textContent = nLocal;
         $("bannerMigra").classList.remove("hidden");
       }
+      if (Object.keys(cloudMetas).length > 0) DATA.metas = cloudMetas;
+      saveLocal();
       finishInit();
     })
     .catch(function(){
