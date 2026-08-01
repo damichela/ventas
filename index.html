@@ -189,8 +189,12 @@
     <div class="chart-box"><canvas id="chartPiezas"></canvas></div>
   </div>
   <div class="card">
-    <div class="sec-title">ACUMULADO CORRIDO ($)</div>
+    <div class="sec-title">ACUMULADO VS META ($)</div>
     <div class="chart-box"><canvas id="chartAcum"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="sec-title" id="tituloTiendas">RITMO POR TIENDA (% DE SU META)</div>
+    <div class="chart-box"><canvas id="chartTiendas"></canvas></div>
   </div>
 </section>
 
@@ -664,12 +668,74 @@ function renderAcumulado(){
   drawChart("chartPiezas","bar",labels,
     BRANCHES.map(function(b){ return { label:b.name, data:daily.map(function(d){return d["p_"+b.id];}), backgroundColor:b.color, stack:"p" }; }),
     function(v){ return fmt(v)+" pzas"; });
-  var acc=0;
-  var cum = daily.map(function(d){ acc+=d.tv; return r2(acc); });
-  drawChart("chartAcum","line",labels,
-    [{ label:"Venta acumulada", data:cum, borderColor:"#0E6B4C", backgroundColor:"#0E6B4C",
-       borderWidth:3, pointRadius:4, tension:.25, fill:false }],
-    function(v){ return "$"+fmt(v); });
+  // Acumulado del mes vs ritmo de meta
+  var diasMes = daysInMonth(mes);
+  var mm = mes.split("-")[1];
+  var labelsMes = [];
+  for (var di = 1; di <= diasMes; di++) {
+    labelsMes.push(String(di).padStart(2,"0")+"/"+mm);
+  }
+  var lastDay = Number(dates[dates.length-1].split("-")[2]);
+  var tvPorDia = {};
+  daily.forEach(function(d){ tvPorDia[Number(d.date.split("-")[2])] = d.tv; });
+  var acc = 0, cumMes = [];
+  for (var dj = 1; dj <= diasMes; dj++) {
+    if (dj <= lastDay) { acc += (tvPorDia[dj] || 0); cumMes.push(r2(acc)); }
+    else cumMes.push(null);
+  }
+  var dsets = [{ label:"Venta acumulada", data:cumMes, borderColor:"#0E6B4C", backgroundColor:"#0E6B4C",
+    borderWidth:3, pointRadius:2, tension:.25, fill:false, spanGaps:false }];
+  var infoM = metasDelMes(mes);
+  if (infoM.m) {
+    var metaTot = BRANCHES.reduce(function(s,b){ return s+(infoM.m[b.id]||0); },0);
+    if (metaTot > 0) {
+      var metaLine = [];
+      for (var dk = 1; dk <= diasMes; dk++) { metaLine.push(r2(metaTot*dk/diasMes)); }
+      dsets.push({ label:"Ritmo de meta", data:metaLine, borderColor:"#B4690E", backgroundColor:"#B4690E",
+        borderWidth:2, borderDash:[6,5], pointRadius:0, tension:0, fill:false });
+    }
+  }
+  drawChart("chartAcum","line",labelsMes,dsets,function(v){ return "$"+fmt(v); });
+
+  // Comportamiento por tienda
+  var cumPorTienda = {};
+  BRANCHES.forEach(function(b){
+    var a = 0, arr = [];
+    for (var dd = 1; dd <= diasMes; dd++) {
+      if (dd <= lastDay) {
+        var key = mes+"-"+String(dd).padStart(2,"0");
+        var r = DATA.days[key] ? DATA.days[key][b.id] : null;
+        a += ventaOf(r);
+        arr.push(r2(a));
+      } else arr.push(null);
+    }
+    cumPorTienda[b.id] = arr;
+  });
+  var dsT = [];
+  var hayMetas = infoM.m && BRANCHES.some(function(b){ return (infoM.m[b.id]||0) > 0; });
+  if (hayMetas) {
+    $("tituloTiendas").textContent = "RITMO POR TIENDA (% DE SU META)";
+    BRANCHES.forEach(function(b){
+      var meta = infoM.m[b.id] || 0;
+      if (meta <= 0) return;
+      dsT.push({ label:b.name,
+        data: cumPorTienda[b.id].map(function(v){ return v==null ? null : r2(v/meta*100); }),
+        borderColor:b.color, backgroundColor:b.color, borderWidth:2.5,
+        pointRadius:0, tension:.25, fill:false, spanGaps:false });
+    });
+    var ref = [];
+    for (var dr = 1; dr <= diasMes; dr++) { ref.push(r2(dr/diasMes*100)); }
+    dsT.push({ label:"Ritmo ideal", data:ref, borderColor:"#9AA09A", backgroundColor:"#9AA09A",
+      borderWidth:2, borderDash:[6,5], pointRadius:0, tension:0, fill:false });
+    drawChart("chartTiendas","line",labelsMes,dsT,function(v){ return fmt(v)+"%"; });
+  } else {
+    $("tituloTiendas").textContent = "ACUMULADO POR TIENDA ($)";
+    BRANCHES.forEach(function(b){
+      dsT.push({ label:b.name, data:cumPorTienda[b.id], borderColor:b.color, backgroundColor:b.color,
+        borderWidth:2.5, pointRadius:0, tension:.25, fill:false, spanGaps:false });
+    });
+    drawChart("chartTiendas","line",labelsMes,dsT,function(v){ return "$"+fmt(v); });
+  }
 }
 function drawChart(id, type, labels, datasets, fmtTip){
   if (charts[id]) charts[id].destroy();
