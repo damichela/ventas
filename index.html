@@ -9,7 +9,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script>if (typeof Chart === "undefined") document.write('<script src="https:\/\/cdn.jsdelivr.net\/npm\/chart.js@4.5.0\/dist\/chart.umd.min.js"><\/script>');</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <style>
   :root{
     --ink:#191C1A; --paper:#F4F2EC; --green:#0E6B4C; --amber:#B4690E;
@@ -21,7 +20,6 @@
     font-family:'Barlow','Segoe UI',system-ui,sans-serif;
     max-width:560px; margin-inline:auto; padding:16px 14px 40px;
   }
-  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
   header{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:14px}
   .brand{font-weight:800; font-size:22px; letter-spacing:.06em; line-height:1}
   .brand-sub{font-size:12px; color:#5B615D; margin-top:4px}
@@ -74,10 +72,11 @@
   footer{font-size:11.5px; color:#82887F; text-align:center; line-height:1.5; margin-top:16px}
   .banner-jefe{background:var(--amber); color:#fff; border-radius:10px; padding:10px 14px;
     font-weight:700; text-align:center; margin-bottom:14px; font-size:14px; letter-spacing:.03em}
+  .banner-info{background:#fff; border:2px solid var(--amber); border-radius:10px; padding:12px 14px;
+    margin-bottom:14px; font-size:13.5px; line-height:1.5}
+  .banner-info .btn{margin-top:10px}
   .hidden{display:none !important}
   .muted{color:var(--muted); font-size:14px; padding:8px 0}
-  .restore-link{font-size:12px; color:var(--muted); text-align:center; margin-top:20px}
-  .restore-link button{font:inherit; background:none; border:none; color:var(--muted); text-decoration:underline; cursor:pointer}
 </style>
 </head>
 <body>
@@ -85,13 +84,25 @@
 <header>
   <div>
     <div class="brand">VENTAS DIARIAS</div>
-    <div class="brand-sub" id="brandSub">4 sucursales</div>
+    <div class="brand-sub" id="brandSub">4 sucursales · en la nube</div>
   </div>
   <input type="date" id="fecha" aria-label="Fecha del reporte">
 </header>
 
 <div id="bannerJefe" class="banner-jefe hidden">👁 VISTA DEL JEFE · SOLO LECTURA</div>
-<div id="jefeFecha" class="muted hidden" style="text-align:center; margin-top:-8px; margin-bottom:12px"></div>
+<div id="bannerSetup" class="banner-info hidden">
+  ⚙️ <b>Falta un paso:</b> esta app aún no está conectada a Google Sheets.
+  Hay que pegar la dirección del script en el archivo index.html
+  (la línea que dice PEGA AQUÍ). Mientras tanto, los datos se guardan solo en este teléfono.
+</div>
+<div id="bannerMigra" class="banner-info hidden">
+  ☁️ La nube está vacía, pero este teléfono tiene <b><span id="migraDias">0</span> día(s)</b> guardados.
+  <button class="btn" id="btnMigrar">Subir mis datos a la nube</button>
+  <div class="status" id="stMigra"></div>
+</div>
+<div id="bannerOffline" class="banner-info hidden">
+  📡 Sin conexión con la nube en este momento. Estás viendo la última copia guardada en este teléfono.
+</div>
 
 <nav class="tabs" id="tabs">
   <button class="tab" data-tab="reportar" id="tabBtnReportar">Reportar</button>
@@ -99,7 +110,7 @@
   <button class="tab" data-tab="acumulado">Acumulado</button>
 </nav>
 
-<!-- ══ REPORTAR ══ -->
+<!-- REPORTAR -->
 <section id="view-reportar" class="hidden">
   <div class="card">
     <div class="sec-title">REPORTE DEL DÍA · LAS 4 TIENDAS</div>
@@ -113,20 +124,23 @@
   </div>
 </section>
 
-<!-- ══ CONSOLIDADO ══ -->
+<!-- CONSOLIDADO -->
 <section id="view-consolidado">
   <div class="card">
     <div class="status warn" id="stFaltantes"></div>
-    <div class="receipt"><pre id="reportText">Sin datos para esta fecha.</pre></div>
+    <div class="receipt"><pre id="reportText">Cargando…</pre></div>
     <div class="row" id="consoBtns">
       <button class="btn" id="btnCopiarReporte">Copiar reporte</button>
       <button class="btn ghost" id="btnEnlaceJefe">Enlace para el jefe</button>
+    </div>
+    <div class="row hidden" id="jefeBtns">
+      <button class="btn ghost" id="btnRefrescar">🔄 Actualizar datos</button>
     </div>
     <div class="status" id="stConso"></div>
   </div>
 </section>
 
-<!-- ══ ACUMULADO ══ -->
+<!-- ACUMULADO -->
 <section id="view-acumulado" class="hidden">
   <div class="card">
     <div class="sec-title" id="acumTitle">ACUMULADO GENERAL</div>
@@ -156,127 +170,104 @@
   </div>
 </section>
 
-<footer id="footerTxt">Los datos se guardan en este dispositivo. Exporta a Excel cada semana como respaldo.</footer>
-<div class="restore-link hidden" id="restoreBox">
-  <button id="btnRestore">Soy el administrador: importar estos datos a este dispositivo</button>
-</div>
+<footer id="footerTxt">Los datos se guardan en Google Sheets. El respaldo extra es el Excel semanal.</footer>
 
 <script>
 "use strict";
-// ── Config ────────────────────────────────────────────────────────
-const BRANCHES = [
+// ═══════════════════════════════════════════════════════════════════
+// ▼▼▼ PEGA AQUÍ la dirección de tu script de Google (entre comillas)
+var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxrqw7fQ6HjTLPyJ6IT9OI9tPLPTDyryMCeQQQG0ILA-ajKJZzNMMt87tsaD3rPXLT91w/exec";
+// ▲▲▲ Debe empezar con https://script.google.com/macros/...
+// ═══════════════════════════════════════════════════════════════════
+
+var BRANCHES = [
   { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C" },
   { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E" },
   { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5" },
-  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A" },
+  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A" }
 ];
-const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-const LS_KEY = "ventasDiarias.v1";
-const SEED_DATE = "2026-07-17";
-const SEED = {
+var DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+var LS_KEY = "ventasDiarias.v1";
+var SEED_DATE = "2026-07-17";
+var SEED = {
   cima:     { usd:100, bs:331.45, cxc:315.55, pz:22, inv:5992 },
   dorado:   { usd:16,  bs:384.3,  cxc:294.7,  pz:22, inv:6062 },
   fiorillo: { usd:0,   bs:31.5,   cxc:33.5,   pz:3,  inv:1852 },
-  centro:   { usd:0,   bs:466.8,  cxc:343.2,  pz:27, inv:10351 },
+  centro:   { usd:0,   bs:466.8,  cxc:343.2,  pz:27, inv:10351 }
 };
 
 // ── Utilidades ────────────────────────────────────────────────────
-const $ = (id) => document.getElementById(id);
-const todayStr = () => {
-  const d = new Date(), p = (n)=>String(n).padStart(2,"0");
+function $(id){ return document.getElementById(id); }
+function todayStr(){
+  var d = new Date();
+  function p(n){ return String(n).padStart(2,"0"); }
   return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
-};
-const fmt = (n) => {
+}
+function fmt(n){
   if (n==null || isNaN(n)) return "0";
-  const neg = n<0 ? "-" : "";
-  const abs = Math.abs(Math.round(n*100)/100);
-  let parts = abs.toFixed(2).split(".");
-  let int = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,".");
-  let dec = parts[1].replace(/0+$/,"");
-  return neg + int + (dec ? ","+dec : "");
-};
-const parseNum = (s) => {
+  var neg = n<0 ? "-" : "";
+  var abs = Math.abs(Math.round(n*100)/100);
+  var parts = abs.toFixed(2).split(".");
+  var int_ = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,".");
+  var dec = parts[1].replace(/0+$/,"");
+  return neg + int_ + (dec ? ","+dec : "");
+}
+function parseNum(s){
   if (s==="" || s==null) return 0;
-  const v = parseFloat(String(s).trim().replace(",","."));
+  var v = parseFloat(String(s).trim().replace(",","."));
   return isNaN(v) ? 0 : v;
-};
-const dateLabel = (iso) => {
-  const p = iso.split("-").map(Number);
-  const dt = new Date(p[0], p[1]-1, p[2]);
-  const pad = (n)=>String(n).padStart(2,"0");
+}
+function dateLabel(iso){
+  var p = iso.split("-").map(Number);
+  var dt = new Date(p[0], p[1]-1, p[2]);
+  function pad(n){ return String(n).padStart(2,"0"); }
   return DAYS[dt.getDay()]+" "+pad(p[2])+"/"+pad(p[1]);
-};
-const shortLabel = (iso) => { const p = iso.split("-"); return p[2]+"/"+p[1]; };
-const ventaOf = (r) => r ? (r.usd||0)+(r.bs||0)+(r.cxc||0) : 0;
-const r2 = (n) => Math.round(n*100)/100;
-
+}
+function shortLabel(iso){ var p = iso.split("-"); return p[2]+"/"+p[1]; }
+function ventaOf(r){ return r ? (r.usd||0)+(r.bs||0)+(r.cxc||0) : 0; }
+function r2(n){ return Math.round(n*100)/100; }
 function showStatus(id, type, msg, timeout){
-  const el = $(id);
+  var el = $(id);
   el.className = "status show "+type;
   el.textContent = msg;
-  if (timeout) setTimeout(()=>{ el.className="status"; }, timeout);
+  if (timeout) setTimeout(function(){ el.className = "status"; }, timeout);
 }
 
 // ── Datos ─────────────────────────────────────────────────────────
-let DATA = { days:{} };          // datos del administrador (localStorage)
-let BOSS = null;                 // datos importados del enlace del jefe
-let esJefe = false;
+var DATA = { days:{} };
+var esJefe = location.hash.indexOf("jefe") !== -1;
+var cloudOn = SCRIPT_URL.indexOf("https://") === 0;
 
-function loadData(){
+function loadLocal(){
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) { DATA = JSON.parse(raw); return; }
-  } catch(e){ console.error(e); }
-  // Primera vez: precargar el 17/07
-  DATA = { days:{} };
-  DATA.days[SEED_DATE] = JSON.parse(JSON.stringify(SEED));
-  saveData();
+    var raw = localStorage.getItem(LS_KEY);
+    if (raw) { DATA = JSON.parse(raw); return true; }
+  } catch(e){}
+  return false;
 }
-function saveData(){
-  try { localStorage.setItem(LS_KEY, JSON.stringify(DATA)); return true; }
-  catch(e){ console.error(e); return false; }
+function saveLocal(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(DATA)); } catch(e){}
 }
-function getDays(){ return esJefe && BOSS ? BOSS.days : DATA.days; }
-function sortedDates(){ return Object.keys(getDays()).sort(); }
+function sortedDates(){ return Object.keys(DATA.days).sort(); }
 
-// ── Modo jefe (datos en el enlace) ────────────────────────────────
-function tryBossMode(){
-  const h = location.hash;
-  if (!h.startsWith("#d=")) return;
-  try {
-    const json = LZString.decompressFromEncodedURIComponent(h.slice(3));
-    const payload = JSON.parse(json);
-    if (!payload || !payload.days) throw new Error("payload inválido");
-    BOSS = payload;
-    esJefe = true;
-  } catch(e){
-    console.error("Enlace inválido:", e);
-  }
-}
-function buildBossLink(){
-  const dates = Object.keys(DATA.days).sort();
-  const recent = dates.slice(-120);            // últimos 120 días de detalle
-  const days = {};
-  recent.forEach(d => { days[d] = DATA.days[d]; });
-  // Acumulado histórico completo (por si el detalle está recortado)
-  const allTime = { branches:{}, dias: dates.length };
-  BRANCHES.forEach(b => {
-    let v=0, p=0;
-    dates.forEach(d => { const r = DATA.days[d][b.id]; if(r){ v+=ventaOf(r); p+=(r.pz||0); } });
-    allTime.branches[b.id] = { venta:r2(v), pz:p };
+function cloudGet(){
+  return fetch(SCRIPT_URL).then(function(r){ return r.json(); }).then(function(j){
+    if (!j || !j.ok) throw new Error("respuesta inválida");
+    return j.days || {};
   });
-  const payload = { v:1, gen: todayStr(), days, allTime };
-  const comp = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-  const base = location.href.split("#")[0];
-  return base + "#d=" + comp;
+}
+function cloudPost(payload){
+  return fetch(SCRIPT_URL, { method:"POST", body: JSON.stringify(payload) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if (!j || !j.ok) throw new Error(j && j.error || "error"); return j; });
 }
 
 // ── Reportar ──────────────────────────────────────────────────────
 function buildStoreForms(){
-  const box = $("stores");
+  var box = $("stores");
   box.innerHTML = "";
-  BRANCHES.forEach(b => {
-    const div = document.createElement("div");
+  BRANCHES.forEach(function(b){
+    var div = document.createElement("div");
     div.className = "store";
     div.innerHTML =
       '<h3><span class="dot" style="background:'+b.color+'"></span>'+b.name+'</h3>'+
@@ -302,26 +293,26 @@ function readForm(bid){
     bs:  parseNum($("in-"+bid+"-bs").value),
     cxc: parseNum($("in-"+bid+"-cxc").value),
     pz:  Math.round(parseNum($("in-"+bid+"-pz").value)),
-    inv: Math.round(parseNum($("in-"+bid+"-inv").value)),
+    inv: Math.round(parseNum($("in-"+bid+"-inv").value))
   };
 }
 function updateTotals(){
-  let tot = 0;
-  BRANCHES.forEach(b => {
-    const r = readForm(b.id);
-    const v = ventaOf(r);
+  var tot = 0;
+  BRANCHES.forEach(function(b){
+    var r = readForm(b.id);
+    var v = ventaOf(r);
     tot += v;
     $("venta-"+b.id).textContent = "Venta: $"+fmt(v)+"  ("+fmt(r.usd)+" + "+fmt(r.bs)+" + "+fmt(r.cxc)+")";
   });
   $("dayTotal").textContent = "$"+fmt(tot);
 }
 function fillFormFromDate(){
-  const d = $("fecha").value;
-  const day = DATA.days[d];
-  BRANCHES.forEach(b => {
-    const r = day ? day[b.id] : null;
-    ["usd","bs","cxc","pz","inv"].forEach(k => {
-      const el = $("in-"+b.id+"-"+k);
+  var d = $("fecha").value;
+  var day = DATA.days[d];
+  BRANCHES.forEach(function(b){
+    var r = day ? day[b.id] : null;
+    ["usd","bs","cxc","pz","inv"].forEach(function(k){
+      var el = $("in-"+b.id+"-"+k);
       el.value = r && r[k] ? String(r[k]).replace(".",",") : "";
     });
   });
@@ -330,40 +321,54 @@ function fillFormFromDate(){
   else $("stReportar").className = "status";
 }
 function guardarDia(){
-  const d = $("fecha").value;
+  var d = $("fecha").value;
   if (!d) { showStatus("stReportar","err","Elige la fecha arriba."); return; }
-  const day = {};
-  let algo = false;
-  BRANCHES.forEach(b => {
-    const r = readForm(b.id);
+  var day = {}, algo = false;
+  BRANCHES.forEach(function(b){
+    var r = readForm(b.id);
     day[b.id] = r;
     if (ventaOf(r) > 0 || r.pz > 0 || r.inv > 0) algo = true;
   });
   if (!algo) { showStatus("stReportar","err","Todos los campos están en cero. Carga al menos una tienda."); return; }
+
   DATA.days[d] = day;
-  if (saveData()) {
-    showStatus("stReportar","ok","Guardado: "+dateLabel(d)+" · Venta total $"+fmt(BRANCHES.reduce((s,b)=>s+ventaOf(day[b.id]),0)), 5000);
-    renderConsolidado();
-    renderAcumulado();
-  } else {
-    showStatus("stReportar","err","No se pudo guardar en este dispositivo.");
+  saveLocal();
+  renderConsolidado();
+  renderAcumulado();
+
+  var total = BRANCHES.reduce(function(s,b){ return s+ventaOf(day[b.id]); },0);
+  if (!cloudOn) {
+    showStatus("stReportar","warn","Guardado SOLO en este teléfono (la nube no está configurada). "+dateLabel(d)+" · $"+fmt(total));
+    return;
   }
+  var btn = $("btnGuardar");
+  btn.disabled = true; btn.textContent = "Guardando en la nube…";
+  cloudPost({ action:"saveDay", date:d, day:day })
+    .then(function(){
+      showStatus("stReportar","ok","☁️ Guardado en la nube: "+dateLabel(d)+" · Venta total $"+fmt(total), 6000);
+    })
+    .catch(function(){
+      showStatus("stReportar","err","Se guardó en este teléfono pero NO en la nube (falla de internet). Cuando tengas señal, vuelve a tocar Guardar día.");
+    })
+    .finally(function(){
+      btn.disabled = false; btn.textContent = "Guardar día";
+    });
 }
 
 // ── Consolidado ───────────────────────────────────────────────────
 function buildReportText(d){
-  const day = getDays()[d];
-  const lines = [];
+  var day = DATA.days[d];
+  var lines = [];
   lines.push("Tiend: $ + Bs + CxC.Cash = Venta");
   lines.push("");
-  let tUsd=0,tBs=0,tCxc=0,tPz=0,tInv=0;
-  BRANCHES.forEach(b => {
-    const r = day ? day[b.id] : null;
+  var tUsd=0,tBs=0,tCxc=0,tPz=0,tInv=0;
+  BRANCHES.forEach(function(b){
+    var r = day ? day[b.id] : null;
     if (!r || (ventaOf(r)===0 && !r.pz && !r.inv)) { lines.push("💰"+b.short+": sin reporte"); return; }
     tUsd+=r.usd||0; tBs+=r.bs||0; tCxc+=r.cxc||0; tPz+=r.pz||0; tInv+=r.inv||0;
     lines.push("💰"+b.short+": "+fmt(r.usd||0)+" + "+fmt(r.bs||0)+" + "+fmt(r.cxc||0)+" = "+fmt(ventaOf(r)));
   });
-  const tVta = tUsd+tBs+tCxc;
+  var tVta = tUsd+tBs+tCxc;
   lines.push("");
   lines.push("Total 💲: "+fmt(tUsd));
   lines.push("Total Bs💳.: "+fmt(tBs));
@@ -376,69 +381,67 @@ function buildReportText(d){
   lines.push("🏷️*Piezas: "+fmt(tPz)+"*");
   lines.push("📈Prom: $"+fmt(tPz>0 ? tVta/tPz : 0));
   lines.push("");
-  BRANCHES.forEach(b => {
-    const r = day ? day[b.id] : null;
+  BRANCHES.forEach(function(b){
+    var r = day ? day[b.id] : null;
     lines.push(b.name+": "+(r ? fmt(r.pz||0) : "—"));
   });
   lines.push("");
   lines.push("*Inventario:*");
-  BRANCHES.forEach(b => {
-    const r = day ? day[b.id] : null;
+  BRANCHES.forEach(function(b){
+    var r = day ? day[b.id] : null;
     lines.push(b.name+": "+(r ? fmt(r.inv||0) : "—")+" pzas");
   });
   lines.push("👟*Total Inventario: "+fmt(tInv)+"*");
   return lines.join("\n");
 }
 function renderConsolidado(){
-  const d = $("fecha").value;
-  const day = getDays()[d];
+  var d = $("fecha").value;
+  var day = DATA.days[d];
   if (!day) {
     $("reportText").textContent = "Sin datos para "+dateLabel(d)+".";
     $("stFaltantes").className = "status";
     return;
   }
-  const faltan = BRANCHES.filter(b => {
-    const r = day[b.id];
+  var faltan = BRANCHES.filter(function(b){
+    var r = day[b.id];
     return !r || (ventaOf(r)===0 && !r.pz && !r.inv);
   });
   if (faltan.length > 0 && faltan.length < 4) {
     $("stFaltantes").className = "status show warn";
-    $("stFaltantes").textContent = "Sin datos: "+faltan.map(b=>b.name).join(", ")+". El consolidado está incompleto.";
+    $("stFaltantes").textContent = "Sin datos: "+faltan.map(function(b){return b.name;}).join(", ")+". El consolidado está incompleto.";
   } else {
     $("stFaltantes").className = "status";
   }
   $("reportText").textContent = buildReportText(d);
 }
 function copiar(texto, statusId, okMsg){
-  const done = () => showStatus(statusId,"ok",okMsg,3500);
-  const fail = () => showStatus(statusId,"err","No se pudo copiar. Mantén presionado el texto y cópialo manual.");
+  function done(){ showStatus(statusId,"ok",okMsg,4000); }
+  function fail(){ showStatus(statusId,"err","No se pudo copiar. Mantén presionado el texto y cópialo manual."); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(texto).then(done).catch(()=>{ fallbackCopy(texto) ? done() : fail(); });
+    navigator.clipboard.writeText(texto).then(done).catch(function(){ fallbackCopy(texto) ? done() : fail(); });
   } else {
     fallbackCopy(texto) ? done() : fail();
   }
 }
 function fallbackCopy(texto){
   try {
-    const ta = document.createElement("textarea");
+    var ta = document.createElement("textarea");
     ta.value = texto; document.body.appendChild(ta);
-    ta.select(); const ok = document.execCommand("copy");
+    ta.select(); var ok = document.execCommand("copy");
     document.body.removeChild(ta); return ok;
   } catch(e){ return false; }
 }
 
 // ── Acumulado ─────────────────────────────────────────────────────
-let charts = {};
+var charts = {};
 function renderAcumulado(){
-  const days = getDays();
-  const dates = sortedDates();
+  var dates = sortedDates();
   if (dates.length === 0) return;
 
-  // Serie diaria
-  const daily = dates.map(d => {
-    const row = { date:d, label:shortLabel(d), tv:0, tp:0 };
-    BRANCHES.forEach(b => {
-      const r = days[d][b.id];
+  var daily = dates.map(function(d){
+    var row = { date:d, label:shortLabel(d), tv:0, tp:0 };
+    BRANCHES.forEach(function(b){
+      var r = DATA.days[d][b.id];
       row["v_"+b.id] = r ? r2(ventaOf(r)) : 0;
       row["p_"+b.id] = r ? (r.pz||0) : 0;
       row.tv += row["v_"+b.id];
@@ -447,35 +450,24 @@ function renderAcumulado(){
     return row;
   });
 
-  // Totales por tienda (jefe: usar allTime si viene en el enlace)
-  let byBranch, totDias;
-  if (esJefe && BOSS && BOSS.allTime) {
-    byBranch = BRANCHES.map(b => {
-      const a = BOSS.allTime.branches[b.id] || {venta:0,pz:0};
-      return Object.assign({}, b, { venta:a.venta, pz:a.pz });
-    });
-    totDias = BOSS.allTime.dias;
-  } else {
-    byBranch = BRANCHES.map(b => {
-      let v=0,p=0;
-      dates.forEach(d => { const r=days[d][b.id]; if(r){ v+=ventaOf(r); p+=(r.pz||0);} });
-      return Object.assign({}, b, { venta:r2(v), pz:p });
-    });
-    totDias = dates.length;
-  }
-  const totV = r2(byBranch.reduce((s,b)=>s+b.venta,0));
-  const totP = byBranch.reduce((s,b)=>s+b.pz,0);
-  const prom = totP>0 ? totV/totP : 0;
+  var byBranch = BRANCHES.map(function(b){
+    var v=0,p=0;
+    dates.forEach(function(d){ var r=DATA.days[d][b.id]; if(r){ v+=ventaOf(r); p+=(r.pz||0);} });
+    return Object.assign({}, b, { venta:r2(v), pz:p });
+  });
+  var totV = r2(byBranch.reduce(function(s,b){return s+b.venta;},0));
+  var totP = byBranch.reduce(function(s,b){return s+b.pz;},0);
+  var prom = totP>0 ? totV/totP : 0;
 
-  $("acumTitle").textContent = "ACUMULADO GENERAL · "+totDias+" día"+(totDias!==1?"s":"");
+  $("acumTitle").textContent = "ACUMULADO GENERAL · "+dates.length+" día"+(dates.length!==1?"s":"");
   $("statVenta").textContent = "$"+fmt(totV);
   $("statPiezas").textContent = fmt(totP);
   $("statProm").textContent = "$"+fmt(prom);
 
-  const tb = $("tablaTiendas");
+  var tb = $("tablaTiendas");
   tb.innerHTML = "";
-  byBranch.forEach(b => {
-    const tr = document.createElement("tr");
+  byBranch.forEach(function(b){
+    var tr = document.createElement("tr");
     tr.innerHTML =
       '<td><span class="dot" style="background:'+b.color+'; margin-right:7px"></span>'+b.name+'</td>'+
       '<td class="n">'+fmt(b.venta)+'</td>'+
@@ -484,34 +476,33 @@ function renderAcumulado(){
       '<td class="n">'+(totV>0 ? fmt(b.venta/totV*100)+"%" : "—")+'</td>';
     tb.appendChild(tr);
   });
-  const trTot = document.createElement("tr");
+  var trTot = document.createElement("tr");
   trTot.className = "tot";
   trTot.innerHTML = '<td>Total</td><td class="n">'+fmt(totV)+'</td><td class="n">'+fmt(totP)+
     '</td><td class="n">'+fmt(prom)+'</td><td class="n">100%</td>';
   tb.appendChild(trTot);
 
-  // Gráficos
   if (typeof Chart === "undefined") {
     showStatus("stAcum","err","Los gráficos no cargaron (falla de internet al abrir la página). Recarga la página con conexión estable.");
     return;
   }
-  const labels = daily.map(d => d.label);
+  var labels = daily.map(function(d){ return d.label; });
   drawChart("chartVenta","bar",labels,
-    BRANCHES.map(b => ({ label:b.name, data:daily.map(d=>d["v_"+b.id]), backgroundColor:b.color, stack:"v" })),
-    (v)=>"$"+fmt(v));
+    BRANCHES.map(function(b){ return { label:b.name, data:daily.map(function(d){return d["v_"+b.id];}), backgroundColor:b.color, stack:"v" }; }),
+    function(v){ return "$"+fmt(v); });
   drawChart("chartPiezas","bar",labels,
-    BRANCHES.map(b => ({ label:b.name, data:daily.map(d=>d["p_"+b.id]), backgroundColor:b.color, stack:"p" })),
-    (v)=>fmt(v)+" pzas");
-  let acc=0;
-  const cum = daily.map(d => { acc+=d.tv; return r2(acc); });
+    BRANCHES.map(function(b){ return { label:b.name, data:daily.map(function(d){return d["p_"+b.id];}), backgroundColor:b.color, stack:"p" }; }),
+    function(v){ return fmt(v)+" pzas"; });
+  var acc=0;
+  var cum = daily.map(function(d){ acc+=d.tv; return r2(acc); });
   drawChart("chartAcum","line",labels,
     [{ label:"Venta acumulada", data:cum, borderColor:"#0E6B4C", backgroundColor:"#0E6B4C",
        borderWidth:3, pointRadius:4, tension:.25, fill:false }],
-    (v)=>"$"+fmt(v));
+    function(v){ return "$"+fmt(v); });
 }
 function drawChart(id, type, labels, datasets, fmtTip){
   if (charts[id]) charts[id].destroy();
-  const stacked = type === "bar";
+  var stacked = type === "bar";
   charts[id] = new Chart($(id), {
     type: type,
     data: { labels: labels, datasets: datasets },
@@ -519,7 +510,7 @@ function drawChart(id, type, labels, datasets, fmtTip){
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{ display: datasets.length>1, labels:{ font:{ size:11, family:"Barlow" } } },
-        tooltip:{ callbacks:{ label:(ctx)=> ctx.dataset.label+": "+fmtTip(ctx.parsed.y) } }
+        tooltip:{ callbacks:{ label:function(ctx){ return ctx.dataset.label+": "+fmtTip(ctx.parsed.y); } } }
       },
       scales:{
         x:{ stacked: stacked, ticks:{ font:{ size:11 } }, grid:{ color:"#EDEBE3" } },
@@ -532,45 +523,44 @@ function drawChart(id, type, labels, datasets, fmtTip){
 // ── Excel ─────────────────────────────────────────────────────────
 function exportExcel(){
   try {
-    const days = getDays();
-    const dates = sortedDates();
-    const wb = XLSX.utils.book_new();
+    var dates = sortedDates();
+    var wb = XLSX.utils.book_new();
 
-    const detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","Inventario"]];
-    dates.forEach(d => BRANCHES.forEach(b => {
-      const r = days[d][b.id]; if (!r) return;
+    var detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","Inventario"]];
+    dates.forEach(function(d){ BRANCHES.forEach(function(b){
+      var r = DATA.days[d][b.id]; if (!r) return;
       detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(ventaOf(r)), r.pz||0, r.inv||0]);
-    }));
-    const ws1 = XLSX.utils.aoa_to_sheet(detalle);
+    });});
+    var ws1 = XLSX.utils.aoa_to_sheet(detalle);
     ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:11}];
     XLSX.utils.book_append_sheet(wb, ws1, "Detalle");
 
-    const conso = [["Fecha","Total $","Total Bs (en $)","Disponible","CxC Cashea","Venta total","Piezas","Prom x pza","Inventario total"]];
-    let aU=0,aB=0,aC=0,aP=0;
-    dates.forEach(d => {
-      let u=0,bs=0,c=0,p=0,inv=0;
-      BRANCHES.forEach(b => { const r=days[d][b.id]; if(r){ u+=r.usd||0; bs+=r.bs||0; c+=r.cxc||0; p+=r.pz||0; inv+=r.inv||0; } });
+    var conso = [["Fecha","Total $","Total Bs (en $)","Disponible","CxC Cashea","Venta total","Piezas","Prom x pza","Inventario total"]];
+    var aU=0,aB=0,aC=0,aP=0;
+    dates.forEach(function(d){
+      var u=0,bs=0,c=0,p=0,inv=0;
+      BRANCHES.forEach(function(b){ var r=DATA.days[d][b.id]; if(r){ u+=r.usd||0; bs+=r.bs||0; c+=r.cxc||0; p+=r.pz||0; inv+=r.inv||0; } });
       aU+=u; aB+=bs; aC+=c; aP+=p;
-      const v=u+bs+c;
+      var v=u+bs+c;
       conso.push([d, r2(u), r2(bs), r2(u+bs), r2(c), r2(v), p, p>0?r2(v/p):0, inv]);
     });
-    const aV=aU+aB+aC;
+    var aV=aU+aB+aC;
     conso.push(["ACUMULADO", r2(aU), r2(aB), r2(aU+aB), r2(aC), r2(aV), aP, aP>0?r2(aV/aP):0, ""]);
-    const ws2 = XLSX.utils.aoa_to_sheet(conso);
+    var ws2 = XLSX.utils.aoa_to_sheet(conso);
     ws2["!cols"] = [{wch:11},{wch:9},{wch:14},{wch:11},{wch:11},{wch:11},{wch:8},{wch:10},{wch:14}];
     XLSX.utils.book_append_sheet(wb, ws2, "Consolidado diario");
 
-    const acum = [["Tienda","Venta $","Piezas","Prom x pza","% del total $","Días"]];
-    let tV=0,tP=0;
-    const rowsB = BRANCHES.map(b => {
-      let v=0,p=0,dias=0;
-      dates.forEach(d => { const r=days[d][b.id]; if(r && (ventaOf(r)>0||r.pz||r.inv)){ v+=ventaOf(r); p+=r.pz||0; dias++; } });
+    var acum = [["Tienda","Venta $","Piezas","Prom x pza","% del total $","Días"]];
+    var tV=0,tP=0;
+    var rowsB = BRANCHES.map(function(b){
+      var v=0,p=0,dias=0;
+      dates.forEach(function(d){ var r=DATA.days[d][b.id]; if(r && (ventaOf(r)>0||r.pz||r.inv)){ v+=ventaOf(r); p+=r.pz||0; dias++; } });
       tV+=v; tP+=p;
       return [b.name, r2(v), p, p>0?r2(v/p):0, 0, dias];
     });
-    rowsB.forEach(r => { r[4] = tV>0 ? r2(r[1]/tV*100) : 0; acum.push(r); });
+    rowsB.forEach(function(r){ r[4] = tV>0 ? r2(r[1]/tV*100) : 0; acum.push(r); });
     acum.push(["TOTAL", r2(tV), tP, tP>0?r2(tV/tP):0, 100, dates.length]);
-    const ws3 = XLSX.utils.aoa_to_sheet(acum);
+    var ws3 = XLSX.utils.aoa_to_sheet(acum);
     ws3["!cols"] = [{wch:10},{wch:10},{wch:8},{wch:10},{wch:12},{wch:7}];
     XLSX.utils.book_append_sheet(wb, ws3, "Acumulado x tienda");
 
@@ -583,8 +573,8 @@ function exportExcel(){
 
 // ── Navegación ────────────────────────────────────────────────────
 function switchTab(name){
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab===name));
-  ["reportar","consolidado","acumulado"].forEach(v => {
+  document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.tab===name); });
+  ["reportar","consolidado","acumulado"].forEach(function(v){
     $("view-"+v).classList.toggle("hidden", v!==name);
   });
   if (name==="consolidado") renderConsolidado();
@@ -593,58 +583,91 @@ function switchTab(name){
 
 // ── Inicio ────────────────────────────────────────────────────────
 function init(){
-  tryBossMode();
   $("fecha").value = todayStr();
 
   if (esJefe) {
-    // Vista del jefe: solo lectura
     $("bannerJefe").classList.remove("hidden");
-    $("jefeFecha").classList.remove("hidden");
-    $("jefeFecha").textContent = "Datos al "+dateLabel(BOSS.gen);
     $("tabBtnReportar").classList.add("hidden");
     $("consoBtns").classList.add("hidden");
-    $("footerTxt").textContent = "Vista de solo lectura. Los datos se actualizan cuando el administrador envía un enlace nuevo.";
-    // Restaurar (por si el admin abre su propio enlace en un teléfono nuevo)
-    $("restoreBox").classList.remove("hidden");
-    $("btnRestore").addEventListener("click", () => {
-      if (confirm("Esto reemplaza los datos guardados en este dispositivo con los del enlace. ¿Continuar?")) {
-        DATA = { days: BOSS.days };
-        if (saveData()) { location.hash = ""; location.reload(); }
-      }
-    });
-    // Fecha por defecto: último día con datos
-    const dates = Object.keys(BOSS.days).sort();
-    if (dates.length) $("fecha").value = dates[dates.length-1];
+    $("jefeBtns").classList.remove("hidden");
+    $("btnRefrescar").addEventListener("click", function(){ location.reload(); });
+    $("footerTxt").textContent = "Vista de solo lectura. Toca Actualizar datos para ver lo más reciente.";
     $("brandSub").textContent = "4 sucursales · consolidado";
   } else {
-    loadData();
     buildStoreForms();
-    fillFormFromDate();
     $("btnGuardar").addEventListener("click", guardarDia);
-    $("btnEnlaceJefe").addEventListener("click", () => {
-      copiar(buildBossLink(), "stConso", "Enlace copiado. Pégalo en el WhatsApp del jefe. Verá los datos de hoy hacia atrás, solo lectura.");
+    $("btnEnlaceJefe").addEventListener("click", function(){
+      var link = location.href.split("#")[0] + "#jefe";
+      copiar(link, "stConso", "Enlace copiado. Es fijo: el jefe lo abre cuando quiera y toca Actualizar datos para ver lo último.");
     });
   }
 
-  $("fecha").addEventListener("change", () => {
+  $("fecha").addEventListener("change", function(){
     if (!esJefe) fillFormFromDate();
     renderConsolidado();
   });
-  document.querySelectorAll(".tab").forEach(t =>
-    t.addEventListener("click", () => switchTab(t.dataset.tab)));
-  $("btnCopiarReporte").addEventListener("click", () =>
-    copiar($("reportText").textContent, "stConso", "Reporte copiado. Pégalo en WhatsApp."));
+  document.querySelectorAll(".tab").forEach(function(t){
+    t.addEventListener("click", function(){ switchTab(t.dataset.tab); });
+  });
+  $("btnCopiarReporte").addEventListener("click", function(){
+    copiar($("reportText").textContent, "stConso", "Reporte copiado. Pégalo en WhatsApp.");
+  });
   $("btnExcel").addEventListener("click", exportExcel);
+  $("btnMigrar").addEventListener("click", migrar);
 
+  // Carga de datos
+  var tieneLocal = loadLocal();
+  if (!tieneLocal && !cloudOn) {
+    DATA = { days:{} };
+    DATA.days[SEED_DATE] = JSON.parse(JSON.stringify(SEED));
+    saveLocal();
+  }
+
+  if (!cloudOn) {
+    if (!esJefe) $("bannerSetup").classList.remove("hidden");
+    finishInit();
+    return;
+  }
+
+  $("reportText").textContent = "Cargando datos de la nube…";
+  cloudGet()
+    .then(function(cloudDays){
+      var nCloud = Object.keys(cloudDays).length;
+      var nLocal = Object.keys(DATA.days).length;
+      if (nCloud > 0) {
+        DATA.days = cloudDays;
+        saveLocal();
+      } else if (nLocal > 0 && !esJefe) {
+        $("migraDias").textContent = nLocal;
+        $("bannerMigra").classList.remove("hidden");
+      }
+      finishInit();
+    })
+    .catch(function(){
+      $("bannerOffline").classList.remove("hidden");
+      finishInit();
+    });
+}
+function finishInit(){
+  var dates = sortedDates();
+  if (esJefe && dates.length) $("fecha").value = dates[dates.length-1];
+  if (!esJefe) fillFormFromDate();
   renderConsolidado();
   renderAcumulado();
   switchTab(esJefe ? "consolidado" : "reportar");
-  // En modo jefe, si la fecha de hoy no tiene datos, ya se ajustó arriba;
-  // en modo admin, mostrar el último día guardado en consolidado si hoy está vacío
-  if (!esJefe && !DATA.days[$("fecha").value]) {
-    const dates = sortedDates();
-    if (dates.length) { /* mantener hoy para reportar; consolidado mostrará "sin datos" hasta guardar */ }
-  }
+}
+function migrar(){
+  var btn = $("btnMigrar");
+  btn.disabled = true; btn.textContent = "Subiendo…";
+  cloudPost({ action:"saveAll", days: DATA.days })
+    .then(function(){
+      showStatus("stMigra","ok","☁️ Listo. Todos tus días están en la nube y en la hoja de Google Sheets.", 8000);
+      setTimeout(function(){ $("bannerMigra").classList.add("hidden"); }, 8000);
+    })
+    .catch(function(){
+      showStatus("stMigra","err","No se pudo subir. Revisa internet y que la dirección del script esté bien pegada.");
+      btn.disabled = false; btn.textContent = "Subir mis datos a la nube";
+    });
 }
 document.addEventListener("DOMContentLoaded", init);
 </script>
