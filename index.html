@@ -181,10 +181,10 @@ var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxrqw7fQ6HjTLPyJ6IT9OI
 // ═══════════════════════════════════════════════════════════════════
 
 var BRANCHES = [
-  { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C" },
-  { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E" },
-  { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5" },
-  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A" }
+  { id:"cima",     short:"Ci", name:"Cima",     color:"#0E6B4C", ab:true  },
+  { id:"dorado",   short:"Do", name:"Dorado",   color:"#B4690E", ab:true  },
+  { id:"fiorillo", short:"Fi", name:"Fiorillo", color:"#4A6FA5", ab:true  },
+  { id:"centro",   short:"Ce", name:"Centro",   color:"#191C1A", ab:false }
 ];
 var DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 var LS_KEY = "ventasDiarias.v1";
@@ -276,6 +276,7 @@ function buildStoreForms(){
         field(b.id,"bs","Bs (en $)")+
         field(b.id,"cxc","CxC Cashea")+
         field(b.id,"pz","Piezas","numeric")+
+        (b.ab ? field(b.id,"txn","N° Ventas","numeric") : "")+
         field(b.id,"inv","Inventario","numeric")+
       '</div>'+
       '<div class="store-venta" id="venta-'+b.id+'">Venta: $0</div>';
@@ -288,13 +289,16 @@ function field(bid, key, label, mode){
     '<input type="text" inputmode="'+(mode||"decimal")+'" placeholder="0" id="in-'+bid+'-'+key+'"></label>';
 }
 function readForm(bid){
-  return {
+  var r = {
     usd: parseNum($("in-"+bid+"-usd").value),
     bs:  parseNum($("in-"+bid+"-bs").value),
     cxc: parseNum($("in-"+bid+"-cxc").value),
     pz:  Math.round(parseNum($("in-"+bid+"-pz").value)),
     inv: Math.round(parseNum($("in-"+bid+"-inv").value))
   };
+  var txnEl = $("in-"+bid+"-txn");
+  if (txnEl) r.txn = Math.round(parseNum(txnEl.value));
+  return r;
 }
 function updateTotals(){
   var tot = 0;
@@ -311,8 +315,9 @@ function fillFormFromDate(){
   var day = DATA.days[d];
   BRANCHES.forEach(function(b){
     var r = day ? day[b.id] : null;
-    ["usd","bs","cxc","pz","inv"].forEach(function(k){
+    ["usd","bs","cxc","pz","txn","inv"].forEach(function(k){
       var el = $("in-"+b.id+"-"+k);
+      if (!el) return;
       el.value = r && r[k] ? String(r[k]).replace(".",",") : "";
     });
   });
@@ -526,13 +531,16 @@ function exportExcel(){
     var dates = sortedDates();
     var wb = XLSX.utils.book_new();
 
-    var detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","Inventario"]];
+    var detalle = [["Fecha","Tienda","Efectivo $","Bs (en $)","CxC Cashea","Venta","Piezas","N° Ventas","Ticket $","Inventario"]];
     dates.forEach(function(d){ BRANCHES.forEach(function(b){
       var r = DATA.days[d][b.id]; if (!r) return;
-      detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(ventaOf(r)), r.pz||0, r.inv||0]);
+      var v = ventaOf(r);
+      var txn = (r.txn!=null && r.txn>0) ? r.txn : "";
+      var ticket = (txn!=="") ? r2(v/txn) : "";
+      detalle.push([d, b.name, r2(r.usd||0), r2(r.bs||0), r2(r.cxc||0), r2(v), r.pz||0, txn, ticket, r.inv||0]);
     });});
     var ws1 = XLSX.utils.aoa_to_sheet(detalle);
-    ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:11}];
+    ws1["!cols"] = [{wch:11},{wch:10},{wch:11},{wch:11},{wch:12},{wch:10},{wch:8},{wch:9},{wch:9},{wch:11}];
     XLSX.utils.book_append_sheet(wb, ws1, "Detalle");
 
     var conso = [["Fecha","Total $","Total Bs (en $)","Disponible","CxC Cashea","Venta total","Piezas","Prom x pza","Inventario total"]];
