@@ -598,8 +598,17 @@ function guardarMetas(){
 var charts = {};
 function renderAcumulado(){
   renderMetas();
-  var dates = sortedDates();
-  if (dates.length === 0) return;
+  var mes = monthOf($("fecha").value || todayStr());
+  var dates = sortedDates().filter(function(d){ return monthOf(d) === mes; });
+  $("acumTitle").textContent = "ACUMULADO "+monthLabel(mes)+" · "+dates.length+" día"+(dates.length!==1?"s":"");
+  if (dates.length === 0) {
+    $("statVenta").textContent = "$0";
+    $("statPiezas").textContent = "0";
+    $("statProm").textContent = "$0";
+    $("tablaTiendas").innerHTML = '<tr><td colspan="5" class="muted">Aún no hay días reportados en este mes. Cambia la fecha arriba para ver meses anteriores.</td></tr>';
+    Object.keys(charts).forEach(function(k){ if (charts[k]) { charts[k].destroy(); charts[k] = null; } });
+    return;
+  }
 
   var daily = dates.map(function(d){
     var row = { date:d, label:shortLabel(d), tv:0, tp:0 };
@@ -622,7 +631,6 @@ function renderAcumulado(){
   var totP = byBranch.reduce(function(s,b){return s+b.pz;},0);
   var prom = totP>0 ? totV/totP : 0;
 
-  $("acumTitle").textContent = "ACUMULADO GENERAL · "+dates.length+" día"+(dates.length!==1?"s":"");
   $("statVenta").textContent = "$"+fmt(totV);
   $("statPiezas").textContent = fmt(totP);
   $("statProm").textContent = "$"+fmt(prom);
@@ -788,6 +796,7 @@ function init(){
   $("fecha").addEventListener("change", function(){
     if (!esJefe) fillFormFromDate();
     renderConsolidado();
+    if (!$("view-acumulado").classList.contains("hidden")) renderAcumulado();
   });
   document.querySelectorAll(".tab").forEach(function(t){
     t.addEventListener("click", function(){ switchTab(t.dataset.tab); });
